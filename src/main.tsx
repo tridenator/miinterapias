@@ -1,10 +1,17 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import PublicBooking from './pages/PublicBooking'
+import TherapistPanel from './pages/TherapistPanel'
 import './index.css'
+
+const router = createBrowserRouter([
+  { path: '/', element: <PublicBooking/> },
+  { path: '/panel', element: <TherapistPanel/> },
+])
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <RouterProvider router={router} />
   </React.StrictMode>,
 )
