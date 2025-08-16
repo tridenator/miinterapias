@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import dayjs from '../lib/dayjs';
 import { supabase } from '../lib/supabase';
+import Header from '../components/Header';
 
 type Therapist = { id: string; full_name: string };
 type BusySlot = { start_at: string; end_at: string; status: string };
@@ -15,17 +16,28 @@ function range30(start: any, end: any){
 }
 
 export default function PublicBooking(){
+  // guía / pasos
+  const [step, setStep] = useState<number>(() => {
+    const seen = localStorage.getItem('guide_seen_v1');
+    return seen ? 2 : 1; // si nunca la vio, arranca en 1 (intro)
+  });
+  useEffect(() => {
+    if (step > 1) localStorage.setItem('guide_seen_v1', 'true');
+  }, [step]);
+
   // terapeutas y selección
   const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [tId, setTId] = useState<string>('');
 
-  // calendario mensual
+  // calendario mensual (compacto)
   const [viewMonth, setViewMonth] = useState(()=>dayjs().startOf('month'));
-  const monthLabel = viewMonth.format('MMMM YYYY'); // en español
-  const gridStart = viewMonth.startOf('month').startOf('week'); // inicia domingo
+  const monthLabel = viewMonth.format('MMMM YYYY');
+  const first = viewMonth.startOf('month');
+  const dowMon0 = (first.day() + 6) % 7;              // lunes como inicio visual
+  const gridStart = first.subtract(dowMon0, 'day');
   const days = useMemo(()=>Array.from({length: 42}, (_,i)=>gridStart.add(i,'day')), [gridStart]);
 
-  // día seleccionado y horas
+  // día y horas
   const [date, setDate] = useState(()=>dayjs().startOf('day'));
   const dayStart = useMemo(()=>date.hour(8).minute(0).second(0), [date]);
   const dayEnd   = useMemo(()=>date.hour(20).minute(0).second(0), [date]);
@@ -40,15 +52,15 @@ export default function PublicBooking(){
   // cargar terapeutas
   useEffect(()=>{
     (async ()=>{
-      const { data, error } = await supabase.rpc('list_therapists');
-      if(!error && data){
+      const { data } = await supabase.rpc('list_therapists');
+      if(data){
         setTherapists(data as Therapist[]);
-        if(!tId && data.length) setTId(data[0].id);
+        if(!tId && data.length) setTId((data as Therapist[])[0].id);
       }
     })();
   },[]);
 
-  // cargar ocupación del día elegido
+  // cargar ocupación
   useEffect(()=>{
     if(!tId) return;
     (async ()=>{
@@ -72,16 +84,20 @@ export default function PublicBooking(){
     try{
       const { error } = await supabase.rpc('book_appointment', {
         t_id: tId,
-        start_at: creating,
+        start_at: new Date(creating).toISOString(),   // <— ISO válido para timestamptz
         patient_name: form.name || null,
         phone: form.phone,
         service: form.service || 'Reiki',
         note: form.note || null,
       });
       if(error) throw error;
-      setMsg('¡Turno reservado!');
+
+      const tf = therapists.find(t => t.id === tId)?.full_name || 'tu terapeuta';
+      const texto = `Tu cita con “${tf}” se ha agendado para el día ${dayjs(creating).format('dddd D [de] MMMM')}, a las ${dayjs(creating).format('HH:mm')} hs.`;
+      setMsg(texto);
+
       setCreating(null);
-      // refrescar ocupación del día
+      // refrescar ocupación
       const { data } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
       setBusy((data||[]) as BusySlot[]);
       setForm({ name:'', phone:'', service:'Reiki', note:'' });
@@ -91,83 +107,105 @@ export default function PublicBooking(){
     }
   }
 
+  // UI
   return (
-    <div className="max-w-2xl mx-auto p-4 space-y-6">
-      {/* Selector de terapeuta */}
-      <div className="flex flex-col sm:flex-row gap-2 items-center justify-between">
-        <select
-          className="w-full sm:w-auto border rounded-xl px-3 py-2"
-          value={tId} onChange={e=>setTId(e.target.value)}
-        >
-          {therapists.map(t => <option key={t.id} value={t.id}>{t.full_name || 'Terapeuta'}</option>)}
-        </select>
-
-        <div className="flex items-center gap-2">
-          <button className="px-3 py-2 rounded-xl border" onClick={()=>setViewMonth(m=>m.add(-1,'month'))}>◀︎</button>
-          <div className="min-w-[10rem] text-center capitalize font-semibold">{monthLabel}</div>
-          <button className="px-3 py-2 rounded-xl border" onClick={()=>setViewMonth(m=>m.add(1,'month'))}>▶︎</button>
+    <>
+      <Header />
+      {/* barra de “pasos” */}
+      <div className="bg-white border-b">
+        <div className="max-w-5xl mx-auto px-4 py-2 flex gap-2 text-sm">
+          <Step label="Agenda tu cita" active={step>=1}/>
+          <Step label="Selecciona tu Terapeuta" active={step>=2}/>
+          <Step label="Selecciona tu Día" active={step>=3}/>
+          <Step label="Selecciona tu Hora" active={step>=4}/>
         </div>
       </div>
 
-      {/* Grilla mensual (6 semanas) */}
-      <div className="border rounded-2xl p-3">
-        <div className="grid grid-cols-7 text-center text-sm text-gray-600 mb-2">
-          {WEEKDAYS.map(d => <div key={d} className="py-1">{d}</div>)}
+      <div className="max-w-5xl mx-auto p-4 space-y-6">
+        {/* selector de terapeuta */}
+        <div className="flex items-center justify-between">
+          <select
+            className="border rounded-xl px-3 py-2"
+            value={tId}
+            onChange={e=>{ setTId(e.target.value); setStep(s=>Math.max(s,2)); }}
+          >
+            {therapists.map(t => <option key={t.id} value={t.id}>{t.full_name || 'Terapeuta'}</option>)}
+          </select>
+
+          <div className="flex items-center gap-2">
+            <button className="px-3 py-2 rounded-xl border" onClick={()=>setViewMonth(m=>m.add(-1,'month'))}>◀︎</button>
+            <div className="min-w-[10rem] text-center capitalize font-semibold">{monthLabel}</div>
+            <button className="px-3 py-2 rounded-xl border" onClick={()=>setViewMonth(m=>m.add(1,'month'))}>▶︎</button>
+          </div>
         </div>
-        <div className="grid grid-cols-7 gap-1">
-          {days.map((d, i)=>{
-            const isThisMonth = d.month() === viewMonth.month();
-            const isSelected = d.isSame(date, 'day');
-            const isToday = d.isSame(dayjs(), 'day');
-            return (
-              <button
-                key={i}
-                onClick={()=>setDate(d.startOf('day'))}
-                className={[
-                  "h-10 rounded-xl border text-sm",
-                  isSelected ? "bg-black text-white border-black" : "bg-white",
-                  !isThisMonth ? "opacity-40" : "",
-                  isToday && !isSelected ? "border-black" : ""
-                ].join(' ')}
-                title={d.format('DD/MM/YYYY')}
-              >
-                {d.format('D')}
-              </button>
-            );
-          })}
+
+        {/* calendario compacto */}
+        <div className="flex justify-center">
+          <div className="w-full max-w-md border rounded-2xl p-3">
+            <div className="grid grid-cols-7 text-center text-xs text-gray-600 mb-2">
+              {WEEKDAYS.map(d => <div key={d} className="py-1">{d}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {days.map((d,i)=>{
+                const isThisMonth = d.month() === viewMonth.month();
+                const isSelected = d.isSame(date,'day');
+                const isToday = d.isSame(dayjs(),'day');
+                return (
+                  <button
+                    key={i}
+                    onClick={()=>{ setDate(d.startOf('day')); setStep(s=>Math.max(s,3)); }}
+                    className={[
+                      "h-9 rounded-xl border text-sm",
+                      isSelected ? "bg-black text-white border-black" : "bg-white",
+                      !isThisMonth ? "opacity-40" : "",
+                      isToday && !isSelected ? "border-black" : ""
+                    ].join(' ')}
+                    title={d.format('DD/MM/YYYY')}
+                  >
+                    {d.format('D')}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* horas del día */}
+        <div>
+          <div className="text-center mb-2">
+            <div className="text-sm text-gray-500 capitalize">{date.format('dddd')}</div>
+            <div className="text-lg font-semibold">{date.format('DD/MM/YYYY')}</div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {slots.map((s:any, idx:number)=>{
+              const startISO = toISO(s.toDate());
+              const label = s.format('HH:mm');
+              const occupied = isOccupied(startISO);
+              return (
+                <button key={idx}
+                  disabled={occupied}
+                  onClick={()=>{ setCreating(startISO); setStep(4); }}
+                  className={`flex items-center justify-between rounded-2xl border px-3 py-3 ${occupied?'bg-gray-100':'bg-white active:scale-[.99] transition'}`}
+                >
+                  <span className="font-medium">{label}</span>
+                  {occupied ? <span className="text-gray-500">Ocupado</span> : <span className="text-green-600">Libre</span>}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
-      {/* Horas del día seleccionado */}
-      <div className="space-y-2">
-        <div className="text-center">
-          <div className="text-sm text-gray-500 capitalize">{date.format('dddd')}</div>
-          <div className="text-lg font-semibold">{date.format('DD/MM/YYYY')}</div>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {slots.map((s:any, idx:number)=>{
-            const startISO = toISO(s.toDate());
-            const label = s.format('HH:mm');
-            const occupied = isOccupied(startISO);
-            return (
-              <button key={idx}
-                disabled={occupied}
-                onClick={()=>setCreating(startISO)}
-                className={`flex items-center justify-between rounded-2xl border px-3 py-3 ${occupied ? 'bg-gray-100' : 'bg-white active:scale-[.99] transition'}`}
-              >
-                <span className="font-medium">{label}</span>
-                {occupied ? <span className="text-gray-500">Ocupado</span> : <span className="text-green-600">Libre</span>}
-              </button>
-            );
-          })}
-        </div>
-      </div>
+      {/* Modal guía inicial */}
+      {step===1 && (
+        <GuideModal onClose={()=>setStep(2)} />
+      )}
 
       {/* Modal de reserva pública */}
       {creating && (
         <div className="fixed inset-0 bg-black/30 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl p-4 space-y-3">
-            <div className="font-semibold">Reservar — {dayjs(creating).format('DD/MM HH:mm')}</div>
+            <div className="font-semibold">Reservar — {dayjs(creating).format('dddd D [de] MMMM HH:mm')}</div>
             <input className="w-full border rounded-xl px-3 py-2" placeholder="Tu nombre (opcional)" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} />
             <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono (obligatorio)" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} />
             <input className="w-full border rounded-xl px-3 py-2" placeholder="Servicio (ej. Reiki)" value={form.service} onChange={e=>setForm({...form, service: e.target.value})} />
@@ -180,10 +218,36 @@ export default function PublicBooking(){
           </div>
         </div>
       )}
+    </>
+  );
+}
 
-      <footer className="pt-2 text-center text-sm">
-        <a href="/panel" className="underline">Panel de terapeutas</a>
-      </footer>
+function Step({label, active}:{label:string; active:boolean}) {
+  return (
+    <div className={`flex items-center gap-2 ${active ? 'opacity-100' : 'opacity-40'}`}>
+      <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] ${active?'bg-black text-white border-black':'bg-white'}`}>
+        ✓
+      </div>
+      <div>{label}</div>
+    </div>
+  );
+}
+
+function GuideModal({ onClose }:{ onClose:()=>void }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Agenda tu cita</h2>
+        <ol className="list-decimal pl-5 space-y-1 text-sm">
+          <li>Selecciona tu Terapeuta.</li>
+          <li>Elige el día en el calendario.</li>
+          <li>Elige la hora disponible.</li>
+          <li>Completa tu <b>teléfono</b> y confirma.</li>
+        </ol>
+        <div className="flex justify-end">
+          <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={onClose}>Entendido</button>
+        </div>
+      </div>
     </div>
   );
 }
