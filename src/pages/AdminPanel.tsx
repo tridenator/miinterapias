@@ -12,21 +12,30 @@ export default function AdminPanel() {
   const [msg, setMsg] = useState('');
 
   useEffect(() => {
-    (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setLoading(false); return; }
-      const { data: ok } = await supabase.rpc('is_admin', { uid: user.id as any }).catch(() => ({ data: false }));
-      setIsAdmin(!!ok);
-      if (ok) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('id, full_name, role, is_active')
-          .order('full_name', { ascending: true });
-        setRows((data || []) as Profile[]);
-      }
-      setLoading(false);
-    })();
-  }, []);
+  (async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setLoading(false); return; }
+
+    let ok = false;
+    try {
+      const { data, error } = await supabase.rpc('is_admin', { uid: user.id as any });
+      ok = !!data && !error;
+    } catch {
+      ok = false;
+    }
+    setIsAdmin(ok);
+
+    if (ok) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, full_name, role, is_active')
+        .order('full_name', { ascending: true });
+      setRows((data || []) as Profile[]);
+    }
+    setLoading(false);
+  })();
+}, []);
+
 
   const filtered = rows.filter(r => {
     const s = (r.full_name || '').toLowerCase();
