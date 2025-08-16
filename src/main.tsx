@@ -3,13 +3,29 @@ import ReactDOM from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import PublicBooking from './pages/PublicBooking'
 import TherapistPanel from './pages/TherapistPanel'
+import RequireTherapist from './routes/RequireTherapist'
+import RequireAdmin from './routes/RequireAdmin'
+import AdminPanel from './pages/AdminPanel'   // si ya lo creaste
 import './index.css'
 
 const router = createBrowserRouter([
   { path: '/', element: <PublicBooking/> },
-{ path: '/panel', element: <RequireTherapist><TherapistPanel/></RequireTherapist> },
-{ path: '/panel/admin', element: <RequireAdmin><AdminPanel/></RequireAdmin> },
-
+  {
+    path: '/panel',
+    element: (
+      <RequireTherapist>
+        <TherapistPanel/>
+      </RequireTherapist>
+    ),
+  },
+  {
+    path: '/panel/admin',
+    element: (
+      <RequireAdmin>
+        <AdminPanel/>
+      </RequireAdmin>
+    ),
+  },
 ])
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
