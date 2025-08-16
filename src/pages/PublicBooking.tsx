@@ -6,7 +6,7 @@ import Header from '../components/Header';
 type Therapist = { id: string; full_name: string };
 type BusySlot = { start_at: string; end_at: string; status: string };
 
-const WEEKDAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 function toISO(d: Date){ return d.toISOString(); }
 function range30(start: any, end: any){
@@ -33,7 +33,7 @@ export default function PublicBooking(){
   const [viewMonth, setViewMonth] = useState(()=>dayjs().startOf('month'));
   const monthLabel = viewMonth.format('MMMM YYYY');
   const first = viewMonth.startOf('month');
-  const dowMon0 = (first.day() + 6) % 7;              // lunes como inicio visual
+  const dowMon0 = (first.day() + 6) % 7;   // Lunes=0
   const gridStart = first.subtract(dowMon0, 'day');
   const days = useMemo(()=>Array.from({length: 42}, (_,i)=>gridStart.add(i,'day')), [gridStart]);
 
