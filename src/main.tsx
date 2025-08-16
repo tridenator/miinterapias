@@ -7,7 +7,9 @@ import './index.css'
 
 const router = createBrowserRouter([
   { path: '/', element: <PublicBooking/> },
-  { path: '/panel', element: <TherapistPanel/> },
+{ path: '/panel', element: <RequireTherapist><TherapistPanel/></RequireTherapist> },
+{ path: '/panel/admin', element: <RequireAdmin><AdminPanel/></RequireAdmin> },
+
 ])
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
