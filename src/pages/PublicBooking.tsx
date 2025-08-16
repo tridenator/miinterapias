@@ -78,35 +78,54 @@ export default function PublicBooking(){
   }
 
   async function book(){
-    if(!creating || !tId) return;
-    setMsg('');
-    if(!form.phone.trim()){ setMsg('El teléfono es obligatorio.'); return; }
-    try{
-      const { error } = await supabase.rpc('book_appointment', {
-        t_id: tId,
-        start_at: new Date(creating).toISOString(), // <-- clave
-        patient_name: form.name || null,
-        phone: form.phone,
-        service: form.service || 'Reiki',
-        note: form.note || null,
-      });
+  if(!creating || !tId) return;
+  setMsg('');
 
-      if(error) throw error;
+  const payload = {
+    t_id: tId,
+    start_at: new Date(creating).toISOString(),  // <-- ISO válido para timestamptz
+    patient_name: form.name || null,
+    phone: form.phone?.trim(),
+    service: form.service || 'Reiki',
+    note: form.note || null,
+  };
 
-      const tf = therapists.find(t => t.id === tId)?.full_name || 'tu terapeuta';
-      const texto = `Tu cita con “${tf}” se ha agendado para el día ${dayjs(creating).format('dddd D [de] MMMM')}, a las ${dayjs(creating).format('HH:mm')} hs.`;
-      setMsg(texto);
-
-      setCreating(null);
-      // refrescar ocupación
-      const { data } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
-      setBusy((data||[]) as BusySlot[]);
-      setForm({ name:'', phone:'', service:'Reiki', note:'' });
-    }catch(e:any){
-      setMsg('No se pudo reservar (¿horario ocupado?). Probá otro horario.');
-      console.error(e);
-    }
+  if (!payload.phone) {
+    setMsg('El teléfono es obligatorio.'); 
+    return;
   }
+
+  try{
+    const { data, error } = await supabase.rpc('book_appointment', payload);
+    if (error) {
+      console.error('RPC book_appointment error:', error);
+      // mensajes amigables
+      const emsg = (error.message || '').toLowerCase();
+      if (emsg.includes('phone_required')) setMsg('El teléfono es obligatorio.');
+      else if (emsg.includes('appointments') && emsg.includes('constraint'))
+        setMsg('Ese horario ya fue tomado. Probá con otro.');
+      else if (error.code === '404') setMsg('No se encontró la función de reserva. Actualizá la página e intentá de nuevo.');
+      else setMsg('No se pudo reservar. Probá nuevamente.');
+      return;
+    }
+
+    // éxito
+    const tf = therapists.find(t => t.id === tId)?.full_name || 'tu terapeuta';
+    setMsg(`Tu cita con “${tf}” se agendó para ${dayjs(creating).format('dddd D [de] MMMM')} a las ${dayjs(creating).format('HH:mm')} hs.`);
+
+    setCreating(null);
+
+    // refrescar disponibilidad del día
+    const { data: busyData } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
+    setBusy((busyData||[]) as BusySlot[]);
+    setForm({ name:'', phone:'', service:'Reiki', note:'' });
+
+  }catch(e:any){
+    console.error('book() exception:', e);
+    setMsg('Error de red. Verificá conexión e intenta nuevamente.');
+  }
+}
+
 
   // UI
   return (
