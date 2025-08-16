@@ -3,6 +3,8 @@ import TherapistPanel from './pages/TherapistPanel'
 import AdminPanel from './pages/AdminPanel'
 import RequireTherapist from './routes/RequireTherapist'
 import RequireAdmin from './routes/RequireAdmin'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+
 
 const router = createBrowserRouter([
   { path: '/', element: <PublicBooking/> },
