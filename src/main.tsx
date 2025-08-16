@@ -5,7 +5,7 @@ import PublicBooking from './pages/PublicBooking'
 import TherapistPanel from './pages/TherapistPanel'
 import RequireTherapist from './routes/RequireTherapist'
 import RequireAdmin from './routes/RequireAdmin'
-import AdminPanel from './pages/AdminPanel'   // si ya lo creaste
+import AdminPanel from './pages/AdminPanel' // si lo creaste
 import './index.css'
 
 const router = createBrowserRouter([
