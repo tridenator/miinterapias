@@ -1,3 +1,4 @@
+import Header from './components/Header';
 import { useEffect, useMemo, useState } from 'react';
 import dayjs from './lib/dayjs';
 import { supabase } from './lib/supabase';
