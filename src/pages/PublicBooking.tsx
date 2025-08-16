@@ -84,12 +84,13 @@ export default function PublicBooking(){
     try{
       const { error } = await supabase.rpc('book_appointment', {
         t_id: tId,
-        start_at: new Date(creating).toISOString(),   // <— ISO válido para timestamptz
+        start_at: new Date(creating).toISOString(), // <-- clave
         patient_name: form.name || null,
         phone: form.phone,
         service: form.service || 'Reiki',
         note: form.note || null,
       });
+
       if(error) throw error;
 
       const tf = therapists.find(t => t.id === tId)?.full_name || 'tu terapeuta';
