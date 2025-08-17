@@ -98,16 +98,35 @@ export default function PublicBooking(){
   try{
     const { data, error } = await supabase.rpc('book_appointment', payload);
     if (error) {
-      console.error('RPC book_appointment error:', error);
-      // mensajes amigables
-      const emsg = (error.message || '').toLowerCase();
-      if (emsg.includes('phone_required')) setMsg('El teléfono es obligatorio.');
-      else if (emsg.includes('appointments') && emsg.includes('constraint'))
-        setMsg('Ese horario ya fue tomado. Probá con otro.');
-      else if (error.code === '404') setMsg('No se encontró la función de reserva. Actualizá la página e intentá de nuevo.');
-      else setMsg('No se pudo reservar. Probá nuevamente.');
-      return;
-    }
+  // Log para depurar
+  console.error('RPC book_appointment error:', {
+    code: error.code,
+    message: error.message,
+    details: (error as any)?.details,
+    hint:    (error as any)?.hint,
+    raw: error,
+  });
+
+  // Texto “técnico” que venga del server (si existe)
+  const technical =
+    ((error as any)?.details as string) ||
+    ((error as any)?.hint as string) ||
+    (error.message ?? '');
+
+  // Mapeo a mensajes amigables
+  const m = (error.message || '').toLowerCase();
+  let userMsg =
+    m.includes('phone_required') ? 'El teléfono es obligatorio.' :
+    m.includes('slot_taken')      ? 'Ese horario ya fue reservado.' :
+    technical                     ? technical :
+    'No se pudo reservar. Probá nuevamente.';
+
+  setMsg(userMsg);
+  // opcional mientras probás:
+  // alert(userMsg);
+  return;
+}
+
 
     // éxito
     const tf = therapists.find(t => t.id === tId)?.full_name || 'tu terapeuta';
