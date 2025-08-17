@@ -90,42 +90,54 @@ export default function PublicBooking(){
     note: form.note || null,
   };
 
-  if (!payload.phone) {
-    setMsg('El teléfono es obligatorio.'); 
-    return;
+  // payload de ejemplo (asegurate del ISO y trims)
+  const payload = {
+    t_id: selectedTherapistId,                         // uuid del terapeuta
+    start_at: new Date(creating).toISOString(),        // ISO real
+    patient_name: form.name.trim(),
+    phone: form.phone.trim(),
+    service: (form.service || '').trim(),
+    note: (form.note || '').trim(),
+  };
+  
+  const { data, error } = await supabase.rpc('book_appointment', payload);
+  
+  if (error) {
+    // log completo para depurar en consola
+    console.error('RPC book_appointment error:', {
+      code: error.code,
+      message: error.message,
+      details: (error as any)?.details,
+      hint:    (error as any)?.hint,
+      raw: error,
+    });
+  
+    // tomamos el texto más informativo del server
+    const serverText =
+      ((error as any)?.details as string) ||
+      ((error as any)?.hint as string) ||
+      (error.message ?? '');
+  
+    const low = serverText.toLowerCase();
+  
+    // mensajes amigables
+    const userMsg =
+      low.includes('phone_required') ? 'El teléfono es obligatorio.' :
+      low.includes('slot_taken')      ? 'Ese horario ya fue reservado.' :
+      // por si el motor manda un NOT NULL en phone
+      (low.includes('not null') && low.includes('phone')) ? 'El teléfono es obligatorio.' :
+      serverText || 'No se pudo reservar. Probá nuevamente.';
+  
+    setMsg(userMsg);
+    return; // importante: salimos si hubo error
   }
-
-  try{
-    const { data, error } = await supabase.rpc('book_appointment', payload);
-    if (error) {
-  // Log para depurar
-  console.error('RPC book_appointment error:', {
-    code: error.code,
-    message: error.message,
-    details: (error as any)?.details,
-    hint:    (error as any)?.hint,
-    raw: error,
-  });
-
-  // Texto “técnico” que venga del server (si existe)
-  const technical =
-    ((error as any)?.details as string) ||
-    ((error as any)?.hint as string) ||
-    (error.message ?? '');
-
-  // Mapeo a mensajes amigables
-  const m = (error.message || '').toLowerCase();
-  let userMsg =
-    m.includes('phone_required') ? 'El teléfono es obligatorio.' :
-    m.includes('slot_taken')      ? 'Ese horario ya fue reservado.' :
-    technical                     ? technical :
-    'No se pudo reservar. Probá nuevamente.';
-
-  setMsg(userMsg);
-  // opcional mientras probás:
-  // alert(userMsg);
-  return;
-}
+  
+  // éxito: data trae { id, start_at, end_at }
+  setMsg('');
+  setShowBooking(false);      // cierra el modal si lo usás
+  await reloadBusySlots();    // vuelve a pedir los turnos ocupados para pintar "Ocupado"
+  // opcional: feedback
+  // alert(`Tu cita quedó agendada para ${dayjs(data.start_at).format('dddd D [de] MMMM, HH:mm')} hs.`);
 
 
     // éxito
