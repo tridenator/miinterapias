@@ -77,75 +77,73 @@ export default function PublicBooking(){
     });
   }
 
-  async function book(){
-  if(!creating || !tId) return;
+ async function book() {
+  if (!creating || !tId) return;
   setMsg('');
 
-  const payload = {
-    t_id: tId,
-    start_at: new Date(creating).toISOString(),  // <-- ISO válido para timestamptz
-    patient_name: form.name || null,
-    phone: form.phone?.trim(),
-    service: form.service || 'Reiki',
-    note: form.note || null,
-  };
-  
-  const { data, error } = await supabase.rpc('book_appointment', payload);
-  
-  if (error) {
-    // log completo para depurar en consola
-    console.error('RPC book_appointment error:', {
-      code: error.code,
-      message: error.message,
-      details: (error as any)?.details,
-      hint:    (error as any)?.hint,
-      raw: error,
-    });
-  
-    // tomamos el texto más informativo del server
-    const serverText =
-      ((error as any)?.details as string) ||
-      ((error as any)?.hint as string) ||
-      (error.message ?? '');
-  
-    const low = serverText.toLowerCase();
-  
-    // mensajes amigables
-    const userMsg =
-      low.includes('phone_required') ? 'El teléfono es obligatorio.' :
-      low.includes('slot_taken')      ? 'Ese horario ya fue reservado.' :
-      // por si el motor manda un NOT NULL en phone
-      (low.includes('not null') && low.includes('phone')) ? 'El teléfono es obligatorio.' :
-      serverText || 'No se pudo reservar. Probá nuevamente.';
-  
-    setMsg(userMsg);
-    return; // importante: salimos si hubo error
-  }
-  
-  // éxito: data trae { id, start_at, end_at }
-  setMsg('');
-  setShowBooking(false);      // cierra el modal si lo usás
-  await reloadBusySlots();    // vuelve a pedir los turnos ocupados para pintar "Ocupado"
-  // opcional: feedback
-  // alert(`Tu cita quedó agendada para ${dayjs(data.start_at).format('dddd D [de] MMMM, HH:mm')} hs.`);
+  try {
+    const payload = {
+      t_id: tId,
+      start_at: new Date(creating).toISOString(),   // ISO válido para timestamptz
+      patient_name: (form.name || '').trim() || null,
+      phone: (form.phone || '').trim(),
+      service: (form.service || 'Reiki').trim(),
+      note: (form.note || '').trim() || null,
+    };
 
+    const { data, error } = await supabase.rpc('book_appointment', payload);
 
-    // éxito
+    if (error) {
+      // Log completo para depurar
+      console.error('RPC book_appointment error:', {
+        code: error.code,
+        message: error.message,
+        details: (error as any)?.details,
+        hint:    (error as any)?.hint,
+        raw: error,
+      });
+
+      // Texto más informativo del server (si viene)
+      const serverText =
+        ((error as any)?.details as string) ||
+        ((error as any)?.hint as string) ||
+        (error.message ?? '');
+
+      const low = serverText.toLowerCase();
+
+      // Mensajes amigables
+      const userMsg =
+        low.includes('phone_required') ? 'El teléfono es obligatorio.' :
+        low.includes('slot_taken')      ? 'Ese horario ya fue reservado.' :
+        (low.includes('not null') && low.includes('phone')) ? 'El teléfono es obligatorio.' :
+        serverText || 'No se pudo reservar. Probá nuevamente.';
+
+      setMsg(userMsg);
+      return; // salimos si hubo error
+    }
+
+    // Éxito
     const tf = therapists.find(t => t.id === tId)?.full_name || 'tu terapeuta';
     setMsg(`Tu cita con “${tf}” se agendó para ${dayjs(creating).format('dddd D [de] MMMM')} a las ${dayjs(creating).format('HH:mm')} hs.`);
 
     setCreating(null);
 
-    // refrescar disponibilidad del día
-    const { data: busyData } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
-    setBusy((busyData||[]) as BusySlot[]);
-    setForm({ name:'', phone:'', service:'Reiki', note:'' });
+    // Refrescar disponibilidad del día
+    const { data: busyData } = await supabase.rpc('get_busy_slots', {
+      t_id: tId,
+      day: date.format('YYYY-MM-DD'),
+    });
+    setBusy((busyData || []) as BusySlot[]);
 
-  }catch(e:any){
+    // Limpiar formulario
+    setForm({ name: '', phone: '', service: 'Reiki', note: '' });
+
+  } catch (e: any) {
     console.error('book() exception:', e);
     setMsg('Error de red. Verificá conexión e intenta nuevamente.');
   }
 }
+
 
 
   // UI
