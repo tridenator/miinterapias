@@ -89,16 +89,6 @@ export default function PublicBooking(){
     service: form.service || 'Reiki',
     note: form.note || null,
   };
-
-  // payload de ejemplo (asegurate del ISO y trims)
-  const payload = {
-    t_id: selectedTherapistId,                         // uuid del terapeuta
-    start_at: new Date(creating).toISOString(),        // ISO real
-    patient_name: form.name.trim(),
-    phone: form.phone.trim(),
-    service: (form.service || '').trim(),
-    note: (form.note || '').trim(),
-  };
   
   const { data, error } = await supabase.rpc('book_appointment', payload);
   
