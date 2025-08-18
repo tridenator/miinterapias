@@ -19,15 +19,6 @@ function range30(start: dayjs.Dayjs, end: dayjs.Dayjs) {
 
 // --- COMPONENTES DE LA PÁGINA ---
 
-// Array de colores para los terapeutas. Cada par es [borde, fondo].
-const therapistColors = [
-  'border-blue-300', 'bg-blue-50',
-  'border-green-300', 'bg-green-50',
-  'border-purple-300', 'bg-purple-50',
-  'border-yellow-300', 'bg-yellow-50',
-  'border-pink-300', 'bg-pink-50',
-];
-
 function Scheduler({ userId }: { userId: string | null }) {
   const [therapists, setTherapists] = useState<Profile[]>([]);
   const [selectedTherapist, setSelectedTherapist] = useState<string | null>(null);
@@ -84,16 +75,6 @@ function Scheduler({ userId }: { userId: string | null }) {
 
   const isOwnAgenda = selectedTherapist === userId;
 
-  // --- NUEVO: Lógica para asignar colores a los terapeutas ---
-  const therapistColorClasses = useMemo(() => {
-    const index = therapists.findIndex(t => t.id === selectedTherapist);
-    if (index === -1) return 'border-gray-200 bg-white'; // Color por defecto
-
-    // Usamos el módulo para ciclar a través de los colores si hay más terapeutas que colores
-    const colorIndex = index % (therapistColors.length / 2);
-    return `${therapistColors[colorIndex * 2]} ${therapistColors[colorIndex * 2 + 1]}`;
-  }, [therapists, selectedTherapist]);
-
   return (
     <div className="max-w-md mx-auto p-4 space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -113,38 +94,10 @@ function Scheduler({ userId }: { userId: string | null }) {
           const label = s.format('HH:mm');
           const occupied = isOccupied(startISO);
           const details = isOwnAgenda ? ownDetails(startISO) : null;
-
-          // --- MODIFICADO: Ocultar slots ocupados si no es la agenda propia ---
-          if (occupied && !isOwnAgenda) {
-            return null; // No renderiza nada
-          }
-
           return (
-            <button
-              key={idx}
-              disabled={occupied && !details}
-              onClick={() => { if (!occupied && isOwnAgenda) setCreating({ start: startISO }); }}
-              // --- MODIFICADO: Aplicar colores y estilos dinámicos ---
-              className={`flex items-center justify-between rounded-2xl border px-3 py-3 
-                ${occupied 
-                  ? 'bg-gray-100 cursor-not-allowed' 
-                  : `${therapistColorClasses} hover:shadow-md`
-                } 
-                ${(!occupied && isOwnAgenda) ? 'active:scale-[.99] transition' : ''}`}
-            >
+            <button key={idx} disabled={occupied && !details} onClick={() => { if (!occupied && isOwnAgenda) setCreating({ start: startISO }); }} className={`flex items-center justify-between rounded-2xl border px-3 py-3 ${occupied ? 'bg-gray-100' : 'bg-white'} ${(!occupied && isOwnAgenda) ? 'active:scale-[.99] transition' : ''}`}>
               <span className="font-medium">{label}</span>
-              {occupied ? (
-                details ? (
-                  <span className="text-left text-sm">
-                    <b>{details.service || 'Turno'}</b>
-                    <span className="block text-gray-600">Paciente asignado</span>
-                  </span>
-                ) : (
-                  <span className="text-gray-500">Ocupado</span>
-                )
-              ) : (
-                isOwnAgenda ? <span className="text-green-600">Libre</span> : <span className="text-blue-600 font-semibold">Disponible</span>
-              )}
+              {occupied ? (details ? (<span className="text-left text-sm"><b>{details.service || 'Turno'}</b><span className="block text-gray-600">Paciente asignado</span></span>) : (<span className="text-gray-500">Ocupado</span>)) : (isOwnAgenda ? <span className="text-green-600">Libre</span> : <span className="text-gray-400">—</span>)}
             </button>
           );
         })}
