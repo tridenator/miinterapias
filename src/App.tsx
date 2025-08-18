@@ -1,10 +1,40 @@
-import { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import dayjs from './lib/dayjs';
 import { supabase } from './lib/supabase';
 import './index.css';
 import type { Session } from '@supabase/supabase-js';
-// 1. IMPORTAMOS TU HEADER REAL
 import Header from './components/Header';
+
+// --- NUEVO: Límite de Error para atrapar fallos ---
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("Error atrapado por ErrorBoundary:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 bg-red-50 border border-red-300 rounded-lg m-4">
+          <h1 className="text-xl font-bold text-red-800">Algo salió mal</h1>
+          <p className="mt-2 text-red-700">La aplicación ha encontrado un error y no puede continuar.</p>
+          <pre className="mt-4 bg-red-100 p-3 rounded text-sm text-red-900 whitespace-pre-wrap">
+            {this.state.error?.toString()}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // --- TIPOS (SIN CAMBIOS) ---
 type Profile = { id: string; full_name: string; role: 'admin' | 'therapist' };
@@ -19,16 +49,27 @@ function range30(start: dayjs.Dayjs, end: dayjs.Dayjs) {
   return slots;
 }
 
-// --- HOOK DE SESIÓN (SIN CAMBIOS) ---
+// --- HOOK DE SESIÓN (CON LOGS PARA DEPURAR) ---
 function useSession() {
   const [loading, setLoading] = useState(true);
   const [session, setSession] = useState<Session | null>(null);
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    console.log("useSession: Verificando sesión...");
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) {
+        console.error("useSession: Error al obtener sesión:", error);
+      } else {
+        console.log("useSession: Sesión obtenida:", data.session);
+      }
       setSession(data.session);
       setLoading(false);
+    }).catch(err => {
+        console.error("useSession: Error crítico en getSession:", err);
+        setLoading(false);
     });
+
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
+      console.log("useSession: Cambio de estado de autenticación.", s);
       setSession(s);
     });
     return () => { sub.subscription.unsubscribe(); };
@@ -76,21 +117,28 @@ function Login() {
   );
 }
 
-// --- COMPONENTE APP (MODIFICADO para usar el Header importado) ---
-export default function App() {
+// --- Componente principal de la lógica de la App ---
+function MainApp() {
   const { session, loading } = useSession();
   if (loading) return <div className="p-6 text-center">Cargando…</div>;
   
-  // MODIFICADO: Verificamos también que exista el usuario en la sesión
   if (!session || !session.user) return <Login />;
   
-  // Si hay sesión y usuario, mostramos el Header y el Scheduler
   return (
     <div>
-      {/* 2. USAMOS TU HEADER SIN PASARLE PROPS */}
       <Header />
       <Scheduler userId={session.user.id} />
     </div>
+  );
+}
+
+// --- COMPONENTE APP (MODIFICADO para usar el ErrorBoundary) ---
+export default function App() {
+  console.log("App.tsx: Renderizando componente principal...");
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
   );
 }
 
