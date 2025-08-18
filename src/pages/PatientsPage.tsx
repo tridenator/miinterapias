@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
-import dayjs from '../lib/dayjs';
-import { supabase } from '../lib/supabase';
-import Header from '../components/Header';
-import { Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from "react";
+import dayjs from "../lib/dayjs";
+import { supabase } from "../lib/supabase";
+import Header from "../components/Header";
+import { Link } from "react-router-dom";
 
-// --- TIPOS ---
-type ByosenPoint = { x: number; y: number; view: 'front' | 'side' | 'back' };
+// Lámina de Byosen (puntos normalizados 0..1 en una sola imagen)
+import ByosenSheet, { ByosenPoint } from "../components/ByosenSheet";
+
+// -------------------- TIPOS --------------------
 type MedicalHistory = {
   allergies?: string;
   surgeries?: string;
@@ -16,6 +18,7 @@ type MedicalHistory = {
   partner?: string;
   other?: string;
 };
+
 type Patient = {
   id: string;
   full_name: string;
@@ -26,6 +29,7 @@ type Patient = {
   medical_history: MedicalHistory | null;
   created_at: string;
 };
+
 type Appointment = {
   id: string;
   start_at: string;
@@ -33,10 +37,10 @@ type Appointment = {
   note: string | null;
   status: string;
   visit_observations: string | null;
-  byosen_points: ByosenPoint[] | null;
+  byosen_points: ByosenPoint[] | null; // jsonb
 };
 
-// --- COMPONENTE PRINCIPAL ---
+// -------------------- PÁGINA --------------------
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -44,103 +48,150 @@ export default function PatientsPage() {
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [search, setSearch] = useState("");
 
+  // --- helpers supabase ---
   const fetchPatients = async (therapistId: string) => {
-    const { data } = await supabase
-      .from('patients')
-      .select('*')
-      .eq('therapist_id', therapistId)
-      .order('full_name');
-    if (data) setPatients(data);
+    const { data, error } = await supabase
+      .from("patients")
+      .select("*")
+      .eq("therapist_id", therapistId)
+      .order("full_name", { ascending: true });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+    if (data) setPatients(data as Patient[]);
   };
 
+  const fetchAppointments = async (patientId: string) => {
+    const { data, error } = await supabase
+      .from("appointments")
+      .select("*")
+      .eq("patient_id", patientId)
+      .order("start_at", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setAppointments((data || []) as Appointment[]);
+  };
+
+  // --- auth + inicial ---
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      const user = data?.user;
+      if (user?.id) {
         setUserId(user.id);
-        fetchPatients(user.id);
+        await fetchPatients(user.id);
       }
       setLoading(false);
-    });
+    })();
   }, []);
 
+  // --- cuando seleccionan paciente, cargar sus turnos ---
   useEffect(() => {
-    if (selectedPatient) {
-      supabase
-        .from('appointments')
-        .select('*')
-        .eq('patient_id', selectedPatient.id)
-        .order('start_at', { ascending: false })
-        .then(({ data }) => {
-          if (data) setAppointments(data as Appointment[]);
-        });
-    } else {
-      setAppointments([]);
-    }
-  }, [selectedPatient]);
+    if (selectedPatient?.id) fetchAppointments(selectedPatient.id);
+    else setAppointments([]);
+  }, [selectedPatient?.id]);
 
-  if (loading) return <div>Cargando...</div>;
+  const filteredPatients = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return patients;
+    return patients.filter((p) => p.full_name.toLowerCase().includes(q));
+  }, [patients, search]);
+
+  if (loading) return <div className="p-6">Cargando…</div>;
 
   return (
     <div>
       <Header />
-      <div className="max-w-5xl mx-auto p-4">
-        <div className="flex justify-between items-center mb-4">
+
+      <div className="max-w-6xl mx-auto p-4">
+        {/* Barra superior */}
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
           <h1 className="text-2xl font-bold">Mis Pacientes</h1>
-          <div>
-            <button onClick={() => setIsEditing(true)} className="mr-4 px-4 py-2 text-sm rounded-xl border bg-blue-500 text-white hover:bg-blue-600">
+          <div className="flex items-center gap-3">
+            <Link to="/panel" className="text-sm underline">
+              Volver a mi agenda
+            </Link>
+            <button
+              onClick={() => setIsEditing(true)}
+              className="px-4 py-2 text-sm rounded-xl border bg-blue-600 text-white hover:bg-blue-700"
+            >
               Nuevo Paciente
             </button>
-            <Link to="/panel" className="text-sm underline">Volver a mi agenda</Link>
           </div>
         </div>
 
+        {/* Layout principal */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Lista de pacientes */}
           <div className="md:col-span-1 bg-white p-4 rounded-xl border">
-            <ul className="space-y-2 max-h-[70vh] overflow-y-auto">
-              {patients.map(patient => (
+            <div className="mb-3">
+              <input
+                className="w-full border rounded-lg px-3 py-2 text-sm"
+                placeholder="Buscar paciente…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
+            <ul className="space-y-1 max-h-[70vh] overflow-y-auto pr-1">
+              {filteredPatients.map((patient) => (
                 <li key={patient.id}>
                   <button
                     onClick={() => setSelectedPatient(patient)}
-                    className={`w-full text-left p-2 rounded-lg ${selectedPatient?.id === patient.id ? 'bg-blue-100 text-blue-800 font-semibold' : 'hover:bg-gray-50'}`}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition ${
+                      selectedPatient?.id === patient.id
+                        ? "bg-blue-100 text-blue-800 font-semibold"
+                        : "hover:bg-gray-50"
+                    }`}
                   >
                     {patient.full_name}
                   </button>
                 </li>
               ))}
+              {filteredPatients.length === 0 && (
+                <li className="text-sm text-gray-500 p-2">
+                  No se encontraron pacientes.
+                </li>
+              )}
             </ul>
           </div>
 
+          {/* Ficha / vacío */}
           <div className="md:col-span-2">
             {selectedPatient ? (
-              <PatientFile 
-                patient={selectedPatient} 
+              <PatientFile
+                patient={selectedPatient}
                 appointments={appointments}
                 onEdit={() => setIsEditing(true)}
-                onUpdateAppointments={async () => {
-                  const { data } = await supabase.from('appointments').select('*').eq('patient_id', selectedPatient.id).order('start_at', { ascending: false });
-                  if (data) setAppointments(data as Appointment[]);
-                }}
+                onUpdateAppointments={() => fetchAppointments(selectedPatient.id)}
               />
             ) : (
-              <div className="flex items-center justify-center h-full bg-gray-50 rounded-xl border-2 border-dashed">
+              <div className="flex items-center justify-center h-[60vh] bg-gray-50 rounded-xl border-2 border-dashed">
                 <p className="text-gray-500">Selecciona un paciente para ver su ficha</p>
               </div>
             )}
           </div>
         </div>
       </div>
-      {(isEditing || !selectedPatient && patients.length === 0 && !loading) && (
+
+      {/* Modal crear/editar paciente */}
+      {(isEditing ||
+        (!selectedPatient && patients.length === 0 && !loading)) && (
         <PatientEditModal
           patient={isEditing ? selectedPatient : null}
           therapistId={userId!}
           onClose={() => setIsEditing(false)}
           onSuccess={async (newPatient) => {
             setIsEditing(false);
-            await fetchPatients(userId!);
-            if (newPatient) {
-              setSelectedPatient(newPatient);
-            }
+            if (userId) await fetchPatients(userId);
+            if (newPatient) setSelectedPatient(newPatient);
           }}
         />
       )}
@@ -148,138 +199,229 @@ export default function PatientsPage() {
   );
 }
 
-// --- SUB-COMPONENTES ---
+// -------------------- SUBCOMPONENTES --------------------
 
-function PatientFile({ patient, appointments, onEdit, onUpdateAppointments }: { patient: Patient; appointments: Appointment[]; onEdit: () => void; onUpdateAppointments: () => void }) {
-  const [editingObservation, setEditingObservation] = useState<{id: string, text: string, points: ByosenPoint[] } | null>(null);
+function PatientFile({
+  patient,
+  appointments,
+  onEdit,
+  onUpdateAppointments,
+}: {
+  patient: Patient;
+  appointments: Appointment[];
+  onEdit: () => void;
+  onUpdateAppointments: () => void;
+}) {
+  const [editing, setEditing] = useState<{
+    id: string;
+    text: string;
+    points: ByosenPoint[];
+  } | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const handleSaveObservation = async () => {
-    if (!editingObservation) return;
-    await supabase
-      .from('appointments')
-      .update({ 
-        visit_observations: editingObservation.text,
-        byosen_points: editingObservation.points 
-      })
-      .eq('id', editingObservation.id);
-    setEditingObservation(null);
-    onUpdateAppointments();
+  const handleSave = async () => {
+    if (!editing) return;
+    try {
+      setSaving(true);
+      const { error } = await supabase
+        .from("appointments")
+        .update({
+          visit_observations: editing.text,
+          byosen_points: editing.points, // jsonb
+        })
+        .eq("id", editing.id);
+      if (error) throw error;
+      setEditing(null);
+      onUpdateAppointments();
+    } catch (e) {
+      console.error(e);
+      alert("Error al guardar la consulta.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="bg-white p-4 rounded-xl border space-y-4">
-      <div className="flex justify-between items-start">
+    <div className="bg-white p-4 rounded-xl border space-y-5">
+      {/* cabecera paciente */}
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold">{patient.full_name}</h2>
-          <p className="text-sm text-gray-600">Tel: {patient.phone || 'N/A'} | Email: {patient.email || 'N/A'}</p>
-          <p className="text-sm text-gray-600">F.N.: {patient.birth_date ? dayjs(patient.birth_date).format('DD/MM/YYYY') : 'N/A'}</p>
+          <p className="text-sm text-gray-600">
+            Tel: {patient.phone || "N/A"} | Email: {patient.email || "N/A"}
+          </p>
+          <p className="text-sm text-gray-600">
+            F.N.:{" "}
+            {patient.birth_date
+              ? dayjs(patient.birth_date).format("DD/MM/YYYY")
+              : "N/A"}
+          </p>
         </div>
-        <button onClick={onEdit} className="text-sm underline">Editar Ficha</button>
+        <button onClick={onEdit} className="text-sm underline">
+          Editar Ficha
+        </button>
       </div>
-      <div className="space-y-2 text-sm">
+
+      {/* motivo */}
+      <section className="space-y-2 text-sm">
         <h3 className="font-semibold">Motivo de la Consulta</h3>
-        <p className="p-2 bg-gray-50 rounded-md whitespace-pre-wrap">{patient.consultation_reason || 'No especificado'}</p>
-      </div>
-      <div className="space-y-2 text-sm">
+        <p className="p-2 bg-gray-50 rounded-md whitespace-pre-wrap">
+          {patient.consultation_reason || "No especificado"}
+        </p>
+      </section>
+
+      {/* historia clínica */}
+      <section className="space-y-2 text-sm">
         <h3 className="font-semibold">Historial de Enfermedades o Cuestiones de Interés</h3>
         <div className="p-2 bg-gray-50 rounded-md">
-          {Object.entries(patient.medical_history || {}).map(([key, value]) => value ? <p key={key}><b>{key.replace(/_/g, ' ')}:</b> {value}</p> : null)}
+          {Object.entries(patient.medical_history || {}).length === 0 && (
+            <p className="text-gray-500">Sin datos.</p>
+          )}
+          {Object.entries(patient.medical_history || {}).map(([k, v]) =>
+            v ? (
+              <p key={k}>
+                <b>{k.replace(/_/g, " ")}:</b> {v}
+              </p>
+            ) : null
+          )}
         </div>
-      </div>
-      <div>
+      </section>
+
+      {/* consultas */}
+      <section>
         <h3 className="font-semibold mb-2">Historial de Consultas</h3>
-        <div className="space-y-3 max-h-[40vh] overflow-y-auto pr-2">
-          {appointments.map(appt => (
+
+        <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+          {appointments.map((appt) => (
             <div key={appt.id} className="p-3 border rounded-lg">
-              <p className="font-semibold capitalize">{dayjs(appt.start_at).format('dddd, D MMM YYYY - HH:mm [hs]')}</p>
-              <p className="text-sm"><b>Servicio:</b> {appt.service || 'N/A'}</p>
+              <p className="font-semibold capitalize">
+                {dayjs(appt.start_at).format("dddd, D MMM YYYY - HH:mm [hs]")}
+              </p>
+              <p className="text-sm">
+                <b>Servicio:</b> {appt.service || "N/A"}
+              </p>
+
               <div className="mt-2">
-                <h4 className="text-xs font-semibold text-gray-600">Observaciones y Lámina Byosen:</h4>
-                {editingObservation?.id === appt.id ? (
-                  <div>
-                    <textarea 
-                      className="w-full border rounded-md p-1 text-sm mb-2"
-                      value={editingObservation.text}
-                      onChange={(e) => setEditingObservation({ ...editingObservation, text: e.target.value })}
+                <h4 className="text-xs font-semibold text-gray-600">
+                  Observaciones y Lámina Byosen
+                </h4>
+
+                {editing?.id === appt.id ? (
+                  <div className="mt-1">
+                    <textarea
+                      className="w-full border rounded-md p-2 text-sm mb-2"
+                      rows={3}
+                      value={editing.text}
+                      onChange={(e) =>
+                        setEditing({ ...editing, text: e.target.value })
+                      }
                     />
-                    <ByosenChart points={editingObservation.points} onPointsChange={(newPoints) => setEditingObservation({...editingObservation, points: newPoints})} />
-                    <button onClick={handleSaveObservation} className="text-xs bg-blue-500 text-white px-2 py-1 rounded mt-2">Guardar</button>
-                    <button onClick={() => setEditingObservation(null)} className="text-xs ml-2">Cancelar</button>
+
+                    <ByosenSheet
+                      points={editing.points || []}
+                      onPointsChange={(pts) =>
+                        setEditing({ ...editing, points: pts })
+                      }
+                    />
+
+                    <div className="flex items-center gap-2 mt-2">
+                      <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="text-xs bg-blue-600 text-white px-3 py-1 rounded disabled:opacity-60"
+                      >
+                        {saving ? "Guardando…" : "Guardar"}
+                      </button>
+                      <button
+                        onClick={() => setEditing(null)}
+                        className="text-xs px-2 py-1 rounded"
+                      >
+                        Cancelar
+                      </button>
+                      <span className="flex-1" />
+                      {/* utilidades rápidas */}
+                      <button
+                        onClick={() =>
+                          setEditing({ ...editing, points: [] })
+                        }
+                        className="text-xs px-2 py-1 rounded border"
+                        title="Limpiar marcas"
+                      >
+                        Limpiar
+                      </button>
+                      <button
+                        onClick={() =>
+                          setEditing({
+                            ...editing,
+                            points: editing.points.slice(0, -1),
+                          })
+                        }
+                        className="text-xs px-2 py-1 rounded border"
+                        title="Deshacer última"
+                      >
+                        Deshacer
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <div onClick={() => setEditingObservation({id: appt.id, text: appt.visit_observations || '', points: appt.byosen_points || []})} className="cursor-pointer hover:bg-gray-50 rounded p-1">
+                  <div
+                    onClick={() =>
+                      setEditing({
+                        id: appt.id,
+                        text: appt.visit_observations || "",
+                        points: (appt.byosen_points as ByosenPoint[]) || [],
+                      })
+                    }
+                    className="cursor-pointer hover:bg-gray-50 rounded p-1"
+                  >
                     <p className="text-sm whitespace-pre-wrap">
-                      {appt.visit_observations || <span className="text-gray-400">Clic para añadir observaciones...</span>}
+                      {appt.visit_observations || (
+                        <span className="text-gray-400">
+                          Clic para añadir observaciones…
+                        </span>
+                      )}
                     </p>
-                    <ByosenChart points={appt.byosen_points || []} isReadOnly />
+                    <ByosenSheet points={appt.byosen_points || []} isReadOnly />
                   </div>
                 )}
               </div>
             </div>
           ))}
+
+          {appointments.length === 0 && (
+            <div className="text-sm text-gray-500 p-2">
+              Aún no hay consultas registradas para este paciente.
+            </div>
+          )}
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-// --- MODIFICADO: Componente ByosenChart con SVG incrustado ---
-function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: ByosenPoint[], onPointsChange?: (points: ByosenPoint[]) => void, isReadOnly?: boolean }) {
-  const [view, setView] = useState<'front' | 'side' | 'back'>('front');
+// -------------------- MODAL CREAR/EDITAR --------------------
 
-  const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (isReadOnly || !onPointsChange) return;
-    const svg = e.currentTarget;
-    const rect = svg.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    
-    const existingPoint = points.find(p => p.view === view && Math.hypot(p.x - x, p.y - y) < 2);
-    if (existingPoint) {
-      onPointsChange(points.filter(p => p !== existingPoint));
-    } else {
-      onPointsChange([...points, { x, y, view }]);
-    }
-  };
-
-  const svgPaths = {
-    front: <path fill="#E2E8F0" stroke="#A0AEC0" strokeWidth="0.5" d="M60.6,10.3c-2.4-2-5.7-3.3-9.3-3.3c-7.5,0-13.6,5.8-13.6,13c0,7.2,6.1,13,13.6,13c3.6,0,6.9-1.3,9.3-3.3 c2.4-2,4-4.8,4-7.9C64.5,15.1,63,12.3,60.6,10.3z M51.3,42.5c-1.5,0-2.8-0.2-4.1-0.6l0.1,0.1V46h8.1v-3.9l0.1,0.1 c-1.3,0.4-2.6,0.6-4.1,0.6z M47.8,49.3v25.8l-5.4,35.7l-2,13.5h6l2-15.1l3.4-22.7h4v-24H47.8z M52.2,49.3v24h4v-24H52.2z M59.6,75.1l3.4,22.7l2,15.1h6l-2-13.5l-5.4-35.7V49.3h-4v24h4V75.1z"/>,
-    side: <path fill="#E2E8F0" stroke="#A0AEC0" strokeWidth="0.5" d="M50.7,6.9c-4.4,0-8.5,1.7-11.5,4.6c-3,2.9-4.6,6.9-4.6,11.1c0,4.2,1.6,8.2,4.6,11.1c3,2.9,7.1,4.6,11.5,4.6 c4.4,0,8.5-1.7,11.5-4.6c3-2.9,4.6-6.9,4.6-11.1C66.8,15.5,60.5,6.9,50.7,6.9z M50.7,42c-1.7,0-3.4-0.3-5-0.8V46h1.9v24h-1.9v3.9 l-2,13.5v15.1h4v-15.1l-2-13.5V70h1.9V46h1.9v-4.8C54.1,41.7,52.4,42,50.7,42z"/>,
-    back: <path fill="#E2E8F0" stroke="#A0AEC0" strokeWidth="0.5" d="M60.6,10.3c-2.4-2-5.7-3.3-9.3-3.3c-7.5,0-13.6,5.8-13.6,13c0,7.2,6.1,13,13.6,13c3.6,0,6.9-1.3,9.3-3.3 c2.4-2,4-4.8,4-7.9C64.5,15.1,63,12.3,60.6,10.3z M51.3,42.5c-1.5,0-2.8-0.2-4.1-0.6l0.1,0.1V46h8.1v-3.9l0.1,0.1 c-1.3,0.4-2.6,0.6-4.1,0.6z M47.8,49.3v25.8l-5.4,35.7l-2,13.5h6l2-15.1l3.4-22.7h4v-24H47.8z M52.2,49.3v24h4v-24H52.2z M59.6,75.1l3.4,22.7l2,15.1h6l-2-13.5l-5.4-35.7V49.3h-4v24h4V75.1z"/>
-  };
-
-  return (
-    <div className="my-2">
-      <div className="flex justify-center border-b mb-1">
-        {(['front', 'side', 'back'] as const).map(v => (
-          <button 
-            key={v} 
-            onClick={() => !isReadOnly && setView(v)}
-            disabled={isReadOnly}
-            className={`px-3 py-1 text-xs capitalize ${view === v ? 'border-b-2 border-blue-500 font-semibold' : 'text-gray-500'}`}
-          >
-            {v === 'front' ? 'Frente' : v === 'side' ? 'Lado' : 'Espalda'}
-          </button>
-        ))}
-      </div>
-      <div className="flex justify-center">
-        <svg viewBox="0 0 100 130" onClick={handleClick} className={`w-48 bg-white rounded ${isReadOnly ? '' : 'cursor-crosshair'}`}>
-          {svgPaths[view]}
-          {points.filter(p => p.view === view).map((p, i) => (
-            <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="red" stroke="white" strokeWidth="0.5" />
-          ))}
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-
-function PatientEditModal({ patient, therapistId, onClose, onSuccess }: { patient: Patient | null; therapistId: string; onClose: () => void; onSuccess: (newPatient?: Patient) => void; }) {
+function PatientEditModal({
+  patient,
+  therapistId,
+  onClose,
+  onSuccess,
+}: {
+  patient: Patient | null;
+  therapistId: string;
+  onClose: () => void;
+  onSuccess: (newPatient?: Patient) => void;
+}) {
   const [form, setForm] = useState<Partial<Patient>>({
-    full_name: '', phone: '', email: '', birth_date: '', consultation_reason: '', medical_history: {}
+    full_name: "",
+    phone: "",
+    email: "",
+    birth_date: "",
+    consultation_reason: "",
+    medical_history: {},
   });
   const [history, setHistory] = useState<MedicalHistory>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (patient) {
@@ -289,40 +431,177 @@ function PatientEditModal({ patient, therapistId, onClose, onSuccess }: { patien
   }, [patient]);
 
   const handleSave = async () => {
-    const payload = { ...form, medical_history: history, therapist_id: therapistId };
-    const { data, error } = patient 
-      ? await supabase.from('patients').update(payload).eq('id', patient.id).select().single()
-      : await supabase.from('patients').insert(payload).select().single();
-    
-    if (error) alert('Error al guardar: ' + error.message);
-    else onSuccess(data as Patient);
+    const payload = {
+      ...form,
+      medical_history: history,
+      therapist_id: therapistId,
+    };
+
+    try {
+      setSaving(true);
+      let data: any = null;
+      let error: any = null;
+
+      if (patient) {
+        ({ data, error } = await supabase
+          .from("patients")
+          .update(payload)
+          .eq("id", patient.id)
+          .select()
+          .single());
+      } else {
+        ({ data, error } = await supabase
+          .from("patients")
+          .insert(payload)
+          .select()
+          .single());
+      }
+
+      if (error) throw error;
+      onSuccess(data as Patient);
+    } catch (e) {
+      console.error(e);
+      alert("Error al guardar la ficha.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="w-full max-w-lg bg-white rounded-2xl p-5 space-y-3 my-8">
-        <h2 className="text-lg font-semibold">{patient ? 'Editar Ficha' : 'Nuevo Paciente'}</h2>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+      <div className="w-full max-w-lg bg-white rounded-2xl p-5 space-y-4">
+        <h2 className="text-lg font-semibold">
+          {patient ? "Editar Ficha" : "Nuevo Paciente"}
+        </h2>
+
         <div className="grid grid-cols-2 gap-4 text-sm">
-            <input className="border rounded-xl px-3 py-2" placeholder="Nombre y Apellidos" value={form.full_name || ''} onChange={e=>setForm({...form, full_name: e.target.value})} />
-            <input type="date" className="border rounded-xl px-3 py-2" value={form.birth_date || ''} onChange={e=>setForm({...form, birth_date: e.target.value})} />
-            <input className="border rounded-xl px-3 py-2" placeholder="Teléfono" value={form.phone || ''} onChange={e=>setForm({...form, phone: e.target.value})} />
-            <input type="email" className="border rounded-xl px-3 py-2" placeholder="Email" value={form.email || ''} onChange={e=>setForm({...form, email: e.target.value})} />
+          <input
+            className="border rounded-xl px-3 py-2 col-span-2"
+            placeholder="Nombre y Apellidos"
+            value={form.full_name || ""}
+            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+          />
+          <input
+            type="date"
+            className="border rounded-xl px-3 py-2"
+            value={form.birth_date || ""}
+            onChange={(e) => setForm({ ...form, birth_date: e.target.value })}
+          />
+          <input
+            className="border rounded-xl px-3 py-2"
+            placeholder="Teléfono"
+            value={form.phone || ""}
+            onChange={(e) => setForm({ ...form, phone: e.target.value })}
+          />
+          <input
+            type="email"
+            className="border rounded-xl px-3 py-2 col-span-2"
+            placeholder="Email"
+            value={form.email || ""}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+          />
         </div>
-        <textarea className="w-full border rounded-xl px-3 py-2 text-sm" rows={3} placeholder="Motivo de la consulta" value={form.consultation_reason || ''} onChange={e=>setForm({...form, consultation_reason: e.target.value})} />
-        <h3 className="font-semibold text-sm pt-2">Historial / Cuestiones de Interés</h3>
+
+        <textarea
+          className="w-full border rounded-xl px-3 py-2 text-sm"
+          rows={3}
+          placeholder="Motivo de la consulta"
+          value={form.consultation_reason || ""}
+          onChange={(e) =>
+            setForm({ ...form, consultation_reason: e.target.value })
+          }
+        />
+
+        <h3 className="font-semibold text-sm pt-1">
+          Historial / Cuestiones de Interés
+        </h3>
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            <input className="border rounded-xl px-3 py-2" placeholder="Alergias" value={history.allergies || ''} onChange={e=>setHistory({...history, allergies: e.target.value})} />
-            <input className="border rounded-xl px-3 py-2" placeholder="Operaciones" value={history.surgeries || ''} onChange={e=>setHistory({...history, surgeries: e.target.value})} />
-            <input className="border rounded-xl px-3 py-2" placeholder="Enfermedades diagnosticadas" value={history.diagnosed_illnesses || ''} onChange={e=>setHistory({...history, diagnosed_illnesses: e.target.value})} />
-            <input className="border rounded-xl px-3 py-2" placeholder="Problemas físicos" value={history.physical_problems || ''} onChange={e=>setHistory({...history, physical_problems: e.target.value})} />
-            <input className="border rounded-xl px-3 py-2" placeholder="Problemas emocionales/mentales" value={history.emotional_mental_problems || ''} onChange={e=>setHistory({...history, emotional_mental_problems: e.target.value})} />
-            <input className="border rounded-xl px-3 py-2" placeholder="Hijos" value={history.children || ''} onChange={e=>setHistory({...history, children: e.target.value})} />
-            <input className="border rounded-xl px-3 py-2" placeholder="Pareja" value={history.partner || ''} onChange={e=>setHistory({...history, partner: e.target.value})} />
-            <input className="border rounded-xl px-3 py-2" placeholder="Otros" value={history.other || ''} onChange={e=>setHistory({...history, other: e.target.value})} />
+          <input
+            className="border rounded-xl px-3 py-2"
+            placeholder="Alergias"
+            value={history.allergies || ""}
+            onChange={(e) =>
+              setHistory({ ...history, allergies: e.target.value })
+            }
+          />
+          <input
+            className="border rounded-xl px-3 py-2"
+            placeholder="Operaciones"
+            value={history.surgeries || ""}
+            onChange={(e) =>
+              setHistory({ ...history, surgeries: e.target.value })
+            }
+          />
+          <input
+            className="border rounded-xl px-3 py-2"
+            placeholder="Enfermedades diagnosticadas"
+            value={history.diagnosed_illnesses || ""}
+            onChange={(e) =>
+              setHistory({
+                ...history,
+                diagnosed_illnesses: e.target.value,
+              })
+            }
+          />
+          <input
+            className="border rounded-xl px-3 py-2"
+            placeholder="Problemas físicos"
+            value={history.physical_problems || ""}
+            onChange={(e) =>
+              setHistory({
+                ...history,
+                physical_problems: e.target.value,
+              })
+            }
+          />
+          <input
+            className="border rounded-xl px-3 py-2"
+            placeholder="Problemas emocionales/mentales"
+            value={history.emotional_mental_problems || ""}
+            onChange={(e) =>
+              setHistory({
+                ...history,
+                emotional_mental_problems: e.target.value,
+              })
+            }
+          />
+          <input
+            className="border rounded-xl px-3 py-2"
+            placeholder="Hijos"
+            value={history.children || ""}
+            onChange={(e) =>
+              setHistory({ ...history, children: e.target.value })
+            }
+          />
+          <input
+            className="border rounded-xl px-3 py-2"
+            placeholder="Pareja"
+            value={history.partner || ""}
+            onChange={(e) =>
+              setHistory({ ...history, partner: e.target.value })
+            }
+          />
+          <input
+            className="border rounded-xl px-3 py-2 col-span-2"
+            placeholder="Otros"
+            value={history.other || ""}
+            onChange={(e) =>
+              setHistory({ ...history, other: e.target.value })
+            }
+          />
         </div>
-        <div className="flex justify-end gap-2 pt-4">
-          <button className="px-4 py-2 rounded-xl border" onClick={onClose}>Cancelar</button>
-          <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={handleSave}>Guardar Ficha</button>
+
+        <div className="flex justify-end gap-2 pt-3">
+          <button className="px-4 py-2 rounded-xl border" onClick={onClose}>
+            Cancelar
+          </button>
+          <button
+            className="px-4 py-2 rounded-xl bg-black text-white disabled:opacity-60"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? "Guardando…" : "Guardar Ficha"}
+          </button>
         </div>
       </div>
     </div>
