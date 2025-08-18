@@ -5,7 +5,7 @@ import Header from '../components/Header';
 import { Link } from 'react-router-dom';
 
 // --- TIPOS ---
-type ByosenPoint = { x: number; y: number };
+type ByosenPoint = { x: number; y: number; view: 'front' | 'side' | 'back' }; // <-- Vista añadida
 type MedicalHistory = {
   allergies?: string;
   surgeries?: string;
@@ -33,7 +33,7 @@ type Appointment = {
   note: string | null;
   status: string;
   visit_observations: string | null;
-  byosen_points: ByosenPoint[] | null; // <-- NUEVO CAMPO
+  byosen_points: ByosenPoint[] | null;
 };
 
 // --- COMPONENTE PRINCIPAL ---
@@ -223,7 +223,10 @@ function PatientFile({ patient, appointments, onEdit, onUpdateAppointments }: { 
   );
 }
 
+// --- MODIFICADO: Componente ByosenChart con vistas ---
 function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: ByosenPoint[], onPointsChange?: (points: ByosenPoint[]) => void, isReadOnly?: boolean }) {
+  const [view, setView] = useState<'front' | 'side' | 'back'>('front');
+
   const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (isReadOnly || !onPointsChange) return;
     const svg = e.currentTarget;
@@ -231,28 +234,46 @@ function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: B
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     
-    // Check if clicking on an existing point to remove it
-    const existingPoint = points.find(p => Math.abs(p.x - x) < 2 && Math.abs(p.y - y) < 2);
+    const existingPoint = points.find(p => p.view === view && Math.abs(p.x - x) < 2 && Math.abs(p.y - y) < 2);
     if (existingPoint) {
       onPointsChange(points.filter(p => p !== existingPoint));
     } else {
-      onPointsChange([...points, { x, y }]);
+      onPointsChange([...points, { x, y, view }]);
     }
   };
 
+  const views = {
+    front: <path d="M50,8.3C40.6,8.3,33,16.2,33,26.1c0,9.9,7.6,17.9,17,17.9s17-7.9,17-17.9C67,16.2,59.4,8.3,50,8.3z M50,47.8 c-1.8,0-3.5-0.3-5.1-0.8L45,47.2V52h10v-4.8l0.1,0.2c-1.6,0.5-3.3,0.8-5.1,0.8z M41.5,55.8v31.9l-6.7,44.2l-2.5,16.8h7.5 l2.5-18.8l4.2-28.1h5v-30H41.5z M58.5,55.8v30h-5v30h4.2l-2.5,18.8h7.5l-2.5-16.8l-6.7-44.2V55.8H58.5z"/>,
+    side: <path d="M50,8.3c-4.6,0-8.8,1.8-11.9,4.8c-3.1,3-4.8,7.2-4.8,11.9c0,9.9,7.6,17.9,17,17.9c1.8,0,3.5-0.3,5.1-0.8 c-0.5-1.5-0.8-3.1-0.8-4.8c0-4.6,1.8-8.8,4.8-11.9C62.8,14.6,56.7,8.3,50,8.3z M45,47.2V52h2.5v30h-2.5v4.8l-2.5,16.8v18.8h5 v-18.8l-2.5-16.8V82h2.5V52H45z"/>,
+    back: <path d="M50,8.3C40.6,8.3,33,16.2,33,26.1c0,9.9,7.6,17.9,17,17.9s17-7.9,17-17.9C67,16.2,59.4,8.3,50,8.3z M50,47.8 c-1.8,0-3.5-0.3-5.1-0.8L45,47.2V52h10v-4.8l0.1,0.2c-1.6,0.5-3.3,0.8-5.1,0.8z M41.5,55.8v31.9l-6.7,44.2l-2.5,16.8h7.5 l2.5-18.8l4.2-28.1h5v-30H41.5z M58.5,55.8v30h-5v30h4.2l-2.5,18.8h7.5l-2.5-16.8l-6.7-44.2V55.8H58.5z"/>
+  };
+
   return (
-    <div className="flex justify-center my-2">
-      <svg viewBox="0 0 100 180" onClick={handleClick} className={`w-48 ${isReadOnly ? '' : 'cursor-crosshair'}`}>
-        {/* Silueta (simplificada) */}
-        <path d="M50 5 C 55 5, 60 10, 60 20 S 55 35, 50 35 S 40 30, 40 20 S 45 5, 50 5 Z M 45 40 L 55 40 L 55 90 L 65 130 L 60 175 L 50 175 L 40 175 L 35 130 L 45 90 Z" fill="none" stroke="#a0aec0" strokeWidth="1" />
-        {/* Puntos de dolor */}
-        {points.map((p, i) => (
-          <circle key={i} cx={p.x} cy={p.y} r="2" fill="red" />
+    <div className="my-2">
+      <div className="flex justify-center border-b mb-1">
+        {(['front', 'side', 'back'] as const).map(v => (
+          <button 
+            key={v} 
+            onClick={() => !isReadOnly && setView(v)}
+            disabled={isReadOnly}
+            className={`px-3 py-1 text-xs capitalize ${view === v ? 'border-b-2 border-blue-500 font-semibold' : 'text-gray-500'}`}
+          >
+            {v === 'front' ? 'Frente' : v === 'side' ? 'Lado' : 'Espalda'}
+          </button>
         ))}
-      </svg>
+      </div>
+      <div className="flex justify-center">
+        <svg viewBox="0 0 100 180" onClick={handleClick} className={`w-48 bg-gray-50 rounded ${isReadOnly ? '' : 'cursor-crosshair'}`}>
+          {views[view]}
+          {points.filter(p => p.view === view).map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r="2" fill="red" />
+          ))}
+        </svg>
+      </div>
     </div>
   );
 }
+
 
 function PatientEditModal({ patient, therapistId, onClose, onSuccess }: { patient: Patient | null; therapistId: string; onClose: () => void; onSuccess: (newPatient?: Patient) => void; }) {
   const [form, setForm] = useState<Partial<Patient>>({
