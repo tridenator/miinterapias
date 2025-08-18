@@ -30,7 +30,7 @@ export default function PublicBooking(){
 
   // terapeutas y selección
   const [therapists, setTherapists] = useState<Therapist[]>([]);
-  const [tId, setTId] = useState<string>('');
+  const [tId, setTId] = useState<string>(''); // Inicia vacío para forzar la selección
 
   // calendario mensual (compacto)
   const [viewMonth, setViewMonth] = useState(()=>dayjs().startOf('month'));
@@ -51,7 +51,7 @@ export default function PublicBooking(){
   const [creating, setCreating] = useState<string|null>(null);
   const [form, setForm] = useState({ name:'', phone:'', service:'Reiki', note:'' });
   const [msg, setMsg] = useState('');
-  const [successInfo, setSuccessInfo] = useState<SuccessInfo | null>(null); // <-- NUEVO: Estado para el modal de éxito
+  const [successInfo, setSuccessInfo] = useState<SuccessInfo | null>(null);
 
   // cargar terapeutas
   useEffect(()=>{
@@ -59,14 +59,14 @@ export default function PublicBooking(){
       const { data } = await supabase.rpc('list_therapists');
       if(data){
         setTherapists(data as Therapist[]);
-        if(!tId && data.length) setTId((data as Therapist[])[0].id);
+        // Ya no seleccionamos un terapeuta por defecto
       }
     })();
   },[]);
 
   // cargar ocupación
   useEffect(()=>{
-    if(!tId) return;
+    if(!tId) return; // No carga nada si no hay terapeuta seleccionado
     (async ()=>{
       const { data } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
       setBusy((data||[]) as BusySlot[]);
@@ -95,7 +95,6 @@ export default function PublicBooking(){
       };
       const { error } = await supabase.rpc('book_appointment', payload);
       if (error) {
-        // ... (manejo de errores sin cambios)
         const serverText = ((error as any)?.details as string) || ((error as any)?.hint as string) || (error.message ?? '');
         const low = serverText.toLowerCase();
         const userMsg =
@@ -107,7 +106,6 @@ export default function PublicBooking(){
         return;
       }
 
-      // --- MODIFICADO: Lógica de éxito ---
       const tf = therapists.find(t => t.id === tId)?.full_name || 'tu terapeuta';
       setSuccessInfo({
         therapistName: tf,
@@ -147,6 +145,8 @@ export default function PublicBooking(){
             value={tId}
             onChange={e=>{ setTId(e.target.value); setStep(s=>Math.max(s,3)); }}
           >
+            {/* --- MODIFICADO: Opción por defecto --- */}
+            <option value="" disabled>Seleccione su terapeuta</option>
             {therapists.map(t => <option key={t.id} value={t.id}>{t.full_name || 'Terapeuta'}</option>)}
           </select>
 
@@ -157,7 +157,7 @@ export default function PublicBooking(){
           </div>
         </div>
 
-        {/* --- MODIFICADO: Contenedor del calendario (se deshabilita si no se ha elegido terapeuta) --- */}
+        {/* Contenedor del calendario (se deshabilita si no se ha elegido terapeuta) */}
         <div className={`transition-opacity duration-300 ${step < 3 ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
           <div className="flex justify-center">
             <div className="w-full max-w-md border rounded-2xl p-3">
@@ -190,7 +190,7 @@ export default function PublicBooking(){
           </div>
         </div>
 
-        {/* --- MODIFICADO: Contenedor de horas (se deshabilita si no se ha elegido día) --- */}
+        {/* Contenedor de horas (se deshabilita si no se ha elegido día) */}
         <div className={`transition-opacity duration-300 ${step < 4 ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
           <div className="text-center mb-2">
             <div className="text-sm text-gray-500 capitalize">{date.format('dddd')}</div>
@@ -239,7 +239,7 @@ export default function PublicBooking(){
         </div>
       )}
       
-      {/* --- NUEVO: Modal de éxito --- */}
+      {/* Modal de éxito */}
       {successInfo && (
         <SuccessModal info={successInfo} onClose={() => setSuccessInfo(null)} />
       )}
@@ -277,7 +277,6 @@ function GuideModal({ onClose }:{ onClose:()=>void }) {
   );
 }
 
-// --- NUEVO: Componente para el modal de éxito ---
 function SuccessModal({ info, onClose }: { info: SuccessInfo, onClose: () => void }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
