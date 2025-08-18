@@ -8,8 +8,16 @@ export default function RequireTherapist({ children }: { children: React.ReactNo
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return setOk(false);
-      const { data, error } = await supabase.rpc('is_therapist'); // ✅ sin params
-      setOk(Boolean(data && !error));
+
+      // Consulto las dos cosas en paralelo
+      const [thera, admin] = await Promise.all([
+        supabase.rpc('is_therapist'),
+        supabase.rpc('is_admin'),
+      ]);
+
+      const isTherapist = !!thera.data && !thera.error;
+      const isAdmin = !!admin.data && !admin.error;
+      setOk(isTherapist || isAdmin);
     })();
   }, []);
 
