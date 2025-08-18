@@ -5,7 +5,7 @@ import Header from '../components/Header';
 import { Link } from 'react-router-dom';
 
 // --- TIPOS ---
-type ByosenPoint = { x: number; y: number; view: 'front' | 'side' | 'back' }; // <-- Vista añadida
+type ByosenPoint = { x: number; y: number; view: 'front' | 'side' | 'back' };
 type MedicalHistory = {
   allergies?: string;
   surgeries?: string;
@@ -223,7 +223,7 @@ function PatientFile({ patient, appointments, onEdit, onUpdateAppointments }: { 
   );
 }
 
-// --- MODIFICADO: Componente ByosenChart con vistas ---
+// --- MODIFICADO: Componente ByosenChart con imágenes ---
 function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: ByosenPoint[], onPointsChange?: (points: ByosenPoint[]) => void, isReadOnly?: boolean }) {
   const [view, setView] = useState<'front' | 'side' | 'back'>('front');
 
@@ -234,7 +234,7 @@ function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: B
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     
-    const existingPoint = points.find(p => p.view === view && Math.abs(p.x - x) < 2 && Math.abs(p.y - y) < 2);
+    const existingPoint = points.find(p => p.view === view && Math.hypot(p.x - x, p.y - y) < 2); // Check distance
     if (existingPoint) {
       onPointsChange(points.filter(p => p !== existingPoint));
     } else {
@@ -242,10 +242,10 @@ function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: B
     }
   };
 
-  const views = {
-    front: <path d="M50,8.3C40.6,8.3,33,16.2,33,26.1c0,9.9,7.6,17.9,17,17.9s17-7.9,17-17.9C67,16.2,59.4,8.3,50,8.3z M50,47.8 c-1.8,0-3.5-0.3-5.1-0.8L45,47.2V52h10v-4.8l0.1,0.2c-1.6,0.5-3.3,0.8-5.1,0.8z M41.5,55.8v31.9l-6.7,44.2l-2.5,16.8h7.5 l2.5-18.8l4.2-28.1h5v-30H41.5z M58.5,55.8v30h-5v30h4.2l-2.5,18.8h7.5l-2.5-16.8l-6.7-44.2V55.8H58.5z"/>,
-    side: <path d="M50,8.3c-4.6,0-8.8,1.8-11.9,4.8c-3.1,3-4.8,7.2-4.8,11.9c0,9.9,7.6,17.9,17,17.9c1.8,0,3.5-0.3,5.1-0.8 c-0.5-1.5-0.8-3.1-0.8-4.8c0-4.6,1.8-8.8,4.8-11.9C62.8,14.6,56.7,8.3,50,8.3z M45,47.2V52h2.5v30h-2.5v4.8l-2.5,16.8v18.8h5 v-18.8l-2.5-16.8V82h2.5V52H45z"/>,
-    back: <path d="M50,8.3C40.6,8.3,33,16.2,33,26.1c0,9.9,7.6,17.9,17,17.9s17-7.9,17-17.9C67,16.2,59.4,8.3,50,8.3z M50,47.8 c-1.8,0-3.5-0.3-5.1-0.8L45,47.2V52h10v-4.8l0.1,0.2c-1.6,0.5-3.3,0.8-5.1,0.8z M41.5,55.8v31.9l-6.7,44.2l-2.5,16.8h7.5 l2.5-18.8l4.2-28.1h5v-30H41.5z M58.5,55.8v30h-5v30h4.2l-2.5,18.8h7.5l-2.5-16.8l-6.7-44.2V55.8H58.5z"/>
+  const imageUrls = {
+    front: 'https://i.imgur.com/gY2SE28.png',
+    side: 'https://i.imgur.com/A0N2t46.png',
+    back: 'https://i.imgur.com/k2AU7nd.png'
   };
 
   return (
@@ -264,9 +264,9 @@ function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: B
       </div>
       <div className="flex justify-center">
         <svg viewBox="0 0 100 180" onClick={handleClick} className={`w-48 bg-gray-50 rounded ${isReadOnly ? '' : 'cursor-crosshair'}`}>
-          {views[view]}
+          <image href={imageUrls[view]} x="0" y="0" width="100" height="180" />
           {points.filter(p => p.view === view).map((p, i) => (
-            <circle key={i} cx={p.x} cy={p.y} r="2" fill="red" />
+            <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="red" stroke="white" strokeWidth="0.5" />
           ))}
         </svg>
       </div>
