@@ -9,13 +9,14 @@ if ((import.meta as any).env?.DEV || qs?.has('debug')) {
   console.log('[debug] supabase expuesto', supabase);
 }
 
-// Importamos los componentes de página
+// Componentes de página
 import PublicBooking from './pages/PublicBooking';
 import TherapistPanel from './pages/TherapistPanel';
 import AdminPanel from './pages/AdminPanel';
-import Login from './pages/Login'; // <-- 1. Importamos la nueva página de Login
+import Login from './pages/Login';
+import PatientsPage from './pages/PatientsPage';
 
-// Importamos los protectores de ruta
+// Protectores de ruta
 import RequireTherapist from './routes/RequireTherapist';
 import RequireAdmin from './routes/RequireAdmin';
 
@@ -27,7 +28,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <Routes>
         {/* Rutas Públicas */}
         <Route path="/" element={<PublicBooking />} />
-        <Route path="/login" element={<Login />} /> {/* <-- 2. Añadimos la ruta /login */}
+        <Route path="/login" element={<Login />} />
 
         {/* Rutas Protegidas */}
         <Route
@@ -35,6 +36,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           element={
             <RequireTherapist>
               <TherapistPanel />
+            </RequireTherapist>
+          }
+        />
+        <Route
+          path="/panel/patients"
+          element={
+            <RequireTherapist>
+              <PatientsPage />
             </RequireTherapist>
           }
         />
