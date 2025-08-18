@@ -2,20 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import dayjs from '../lib/dayjs';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
+import type { Session } from '@supabase/supabase-js';
 
+// --- TIPOS Y FUNCIONES ---
 type Therapist = { id: string; full_name: string };
 type BusySlot = { start_at: string; end_at: string; status: string };
+type SuccessInfo = { therapistName: string; date: string; time: string };
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
-
-// --- NUEVO: Paleta de colores para los terapeutas ---
-const therapistColors = [
-  'border-blue-300 bg-blue-50 hover:shadow-md',
-  'border-green-300 bg-green-50 hover:shadow-md',
-  'border-purple-300 bg-purple-50 hover:shadow-md',
-  'border-yellow-300 bg-yellow-50 hover:shadow-md',
-  'border-pink-300 bg-pink-50 hover:shadow-md',
-];
 
 function toISO(d: Date){ return d.toISOString(); }
 function range30(start: any, end: any){
@@ -57,6 +51,7 @@ export default function PublicBooking(){
   const [creating, setCreating] = useState<string|null>(null);
   const [form, setForm] = useState({ name:'', phone:'', service:'Reiki', note:'' });
   const [msg, setMsg] = useState('');
+  const [successInfo, setSuccessInfo] = useState<SuccessInfo | null>(null); // <-- NUEVO: Estado para el modal de éxito
 
   // cargar terapeutas
   useEffect(()=>{
@@ -100,7 +95,7 @@ export default function PublicBooking(){
       };
       const { error } = await supabase.rpc('book_appointment', payload);
       if (error) {
-        console.error('RPC book_appointment error:', error);
+        // ... (manejo de errores sin cambios)
         const serverText = ((error as any)?.details as string) || ((error as any)?.hint as string) || (error.message ?? '');
         const low = serverText.toLowerCase();
         const userMsg =
@@ -111,25 +106,24 @@ export default function PublicBooking(){
         setMsg(userMsg);
         return;
       }
+
+      // --- MODIFICADO: Lógica de éxito ---
       const tf = therapists.find(t => t.id === tId)?.full_name || 'tu terapeuta';
-      setMsg(`Tu cita con “${tf}” se agendó para ${dayjs(creating).format('dddd D [de] MMMM')} a las ${dayjs(creating).format('HH:mm')} hs.`);
+      setSuccessInfo({
+        therapistName: tf,
+        date: dayjs(creating).format('dddd D [de] MMMM'),
+        time: dayjs(creating).format('HH:mm'),
+      });
       setCreating(null);
       const { data: busyData } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
       setBusy((busyData || []) as BusySlot[]);
       setForm({ name: '', phone: '', service: 'Reiki', note: '' });
+
     } catch (e: any) {
       console.error('book() exception:', e);
       setMsg('Error de red. Verificá conexión e intenta nuevamente.');
     }
   }
-
-  // --- NUEVO: Lógica para asignar colores a los terapeutas ---
-  const therapistColorClass = useMemo(() => {
-    const index = therapists.findIndex(t => t.id === tId);
-    if (index === -1) return 'bg-white'; // Color por defecto
-    const colorIndex = index % therapistColors.length;
-    return therapistColors[colorIndex];
-  }, [therapists, tId]);
 
   // UI
   return (
@@ -137,11 +131,11 @@ export default function PublicBooking(){
       <Header />
       {/* barra de “pasos” */}
       <div className="bg-white border-b">
-        <div className="max-w-5xl mx-auto px-4 py-2 flex gap-2 text-sm">
+        <div className="max-w-5xl mx-auto px-4 py-2 flex gap-2 sm:gap-4 text-sm flex-wrap">
           <Step label="Agenda tu cita" active={step>=1}/>
-          <Step label="Selecciona tu Terapeuta" active={step>=2}/>
-          <Step label="Selecciona tu Día" active={step>=3}/>
-          <Step label="Selecciona tu Hora" active={step>=4}/>
+          <Step label="Selecciona Terapeuta" active={step>=2}/>
+          <Step label="Selecciona Día" active={step>=3}/>
+          <Step label="Selecciona Hora" active={step>=4}/>
         </div>
       </div>
 
@@ -151,7 +145,7 @@ export default function PublicBooking(){
           <select
             className="border rounded-xl px-3 py-2"
             value={tId}
-            onChange={e=>{ setTId(e.target.value); setStep(s=>Math.max(s,2)); }}
+            onChange={e=>{ setTId(e.target.value); setStep(s=>Math.max(s,3)); }}
           >
             {therapists.map(t => <option key={t.id} value={t.id}>{t.full_name || 'Terapeuta'}</option>)}
           </select>
@@ -163,39 +157,41 @@ export default function PublicBooking(){
           </div>
         </div>
 
-        {/* calendario compacto */}
-        <div className="flex justify-center">
-          <div className="w-full max-w-md border rounded-2xl p-3">
-            <div className="grid grid-cols-7 text-center text-xs text-gray-600 mb-2">
-              {WEEKDAYS.map(d => <div key={d} className="py-1">{d}</div>)}
-            </div>
-            <div className="grid grid-cols-7 gap-1">
-              {days.map((d,i)=>{
-                const isThisMonth = d.month() === viewMonth.month();
-                const isSelected = d.isSame(date,'day');
-                const isToday = d.isSame(dayjs(),'day');
-                return (
-                  <button
-                    key={i}
-                    onClick={()=>{ setDate(d.startOf('day')); setStep(s=>Math.max(s,3)); }}
-                    className={[
-                      "h-9 rounded-xl border text-sm",
-                      isSelected ? "bg-black text-white border-black" : "bg-white",
-                      !isThisMonth ? "opacity-40" : "",
-                      isToday && !isSelected ? "border-black" : ""
-                    ].join(' ')}
-                    title={d.format('DD/MM/YYYY')}
-                  >
-                    {d.format('D')}
-                  </button>
-                );
-              })}
+        {/* --- MODIFICADO: Contenedor del calendario (se deshabilita si no se ha elegido terapeuta) --- */}
+        <div className={`transition-opacity duration-300 ${step < 3 ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
+          <div className="flex justify-center">
+            <div className="w-full max-w-md border rounded-2xl p-3">
+              <div className="grid grid-cols-7 text-center text-xs text-gray-600 mb-2">
+                {WEEKDAYS.map(d => <div key={d} className="py-1">{d}</div>)}
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {days.map((d,i)=>{
+                  const isThisMonth = d.month() === viewMonth.month();
+                  const isSelected = d.isSame(date,'day');
+                  const isToday = d.isSame(dayjs(),'day');
+                  return (
+                    <button
+                      key={i}
+                      onClick={()=>{ setDate(d.startOf('day')); setStep(s=>Math.max(s,4)); }}
+                      className={[
+                        "h-9 rounded-xl border text-sm",
+                        isSelected ? "bg-black text-white border-black" : "bg-white",
+                        !isThisMonth ? "opacity-40" : "",
+                        isToday && !isSelected ? "border-black" : ""
+                      ].join(' ')}
+                      title={d.format('DD/MM/YYYY')}
+                    >
+                      {d.format('D')}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
 
-        {/* horas del día */}
-        <div>
+        {/* --- MODIFICADO: Contenedor de horas (se deshabilita si no se ha elegido día) --- */}
+        <div className={`transition-opacity duration-300 ${step < 4 ? 'opacity-40 pointer-events-none' : 'opacity-100'}`}>
           <div className="text-center mb-2">
             <div className="text-sm text-gray-500 capitalize">{date.format('dddd')}</div>
             <div className="text-lg font-semibold">{date.format('DD/MM/YYYY')}</div>
@@ -205,17 +201,11 @@ export default function PublicBooking(){
               const startISO = toISO(s.toDate());
               const label = s.format('HH:mm');
               const occupied = isOccupied(startISO);
-
-              // --- MODIFICADO: Ocultar slots ocupados ---
-              if (occupied) {
-                return null; // No se renderiza el botón
-              }
-
+              if (occupied) return null; // Oculta horas ocupadas
               return (
                 <button key={idx}
-                  onClick={()=>{ setCreating(startISO); setStep(4); }}
-                  // --- MODIFICADO: Aplicar color de terapeuta ---
-                  className={`flex items-center justify-between rounded-2xl border px-3 py-3 transition active:scale-[.99] ${therapistColorClass}`}
+                  onClick={()=>{ setCreating(startISO); }}
+                  className={`flex items-center justify-between rounded-2xl border px-3 py-3 bg-white active:scale-[.99] transition`}
                 >
                   <span className="font-medium">{label}</span>
                   <span className="text-green-600">Libre</span>
@@ -240,13 +230,18 @@ export default function PublicBooking(){
             <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono (obligatorio)" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} />
             <input className="w-full border rounded-xl px-3 py-2" placeholder="Servicio (ej. Reiki)" value={form.service} onChange={e=>setForm({...form, service: e.target.value})} />
             <textarea className="w-full border rounded-xl px-3 py-2" placeholder="Nota (opcional)" value={form.note} onChange={e=>setForm({...form, note: e.target.value})} />
-            {msg && <p className="text-sm text-blue-700">{msg}</p>}
+            {msg && <p className="text-sm text-red-600">{msg}</p>}
             <div className="flex gap-2 justify-end">
               <button className="px-4 py-2 rounded-xl border" onClick={()=>setCreating(null)}>Cancelar</button>
               <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={book}>Confirmar</button>
             </div>
           </div>
         </div>
+      )}
+      
+      {/* --- NUEVO: Modal de éxito --- */}
+      {successInfo && (
+        <SuccessModal info={successInfo} onClose={() => setSuccessInfo(null)} />
       )}
     </>
   );
@@ -276,6 +271,26 @@ function GuideModal({ onClose }:{ onClose:()=>void }) {
         </ol>
         <div className="flex justify-end">
           <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={onClose}>Entendido</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- NUEVO: Componente para el modal de éxito ---
+function SuccessModal({ info, onClose }: { info: SuccessInfo, onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-4 text-center">
+        <h2 className="text-lg font-semibold">¡Cita Agendada!</h2>
+        <p className="text-sm text-gray-700">
+          Te has agendado para el día <b className="capitalize">{info.date}</b> a las <b>{info.time} hs</b> con <b>{info.therapistName}</b>.
+        </p>
+        <p className="text-sm text-gray-700">
+          Nos comunicaremos contigo para recordarte y confirmar asistencia. Gracias.
+        </p>
+        <div className="flex justify-center">
+          <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={onClose}>Cerrar</button>
         </div>
       </div>
     </div>
