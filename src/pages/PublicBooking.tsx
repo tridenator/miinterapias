@@ -2,185 +2,282 @@ import { useEffect, useMemo, useState } from 'react';
 import dayjs from '../lib/dayjs';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
-import type { Session } from '@supabase/supabase-js';
 
-// --- TIPOS Y FUNCIONES ---
-type Profile = { id: string; full_name: string; role: 'admin' | 'therapist' };
-type Appointment = { id: string; therapist_id: string; patient_id: string | null; start_at: string; end_at: string; status: 'scheduled' | 'cancelled' | 'no_show' | 'blocked'; service: string | null; note: string | null; };
+type Therapist = { id: string; full_name: string };
 type BusySlot = { start_at: string; end_at: string; status: string };
 
-function toISO(date: Date) { return date.toISOString(); }
-function range30(start: dayjs.Dayjs, end: dayjs.Dayjs) {
-  const slots: dayjs.Dayjs[] = [];
-  let cur = start.clone();
-  while (cur.isBefore(end)) { slots.push(cur); cur = cur.add(30, 'minute'); }
+const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+// --- NUEVO: Paleta de colores para los terapeutas ---
+const therapistColors = [
+  'border-blue-300 bg-blue-50 hover:shadow-md',
+  'border-green-300 bg-green-50 hover:shadow-md',
+  'border-purple-300 bg-purple-50 hover:shadow-md',
+  'border-yellow-300 bg-yellow-50 hover:shadow-md',
+  'border-pink-300 bg-pink-50 hover:shadow-md',
+];
+
+function toISO(d: Date){ return d.toISOString(); }
+function range30(start: any, end: any){
+  const slots: any[] = []; let cur = start.clone();
+  while(cur.isBefore(end)){ slots.push(cur); cur = cur.add(30,'minute'); }
   return slots;
 }
 
-// --- COMPONENTES DE LA PÁGINA ---
+export default function PublicBooking(){
+  // guía / pasos
+  const [step, setStep] = useState<number>(() => {
+    const seen = localStorage.getItem('guide_seen_v1');
+    return seen ? 2 : 1; // si nunca la vio, arranca en 1 (intro)
+  });
+  useEffect(() => {
+    if (step > 1) localStorage.setItem('guide_seen_v1', 'true');
+  }, [step]);
 
-function Scheduler({ userId }: { userId: string | null }) {
-  const [therapists, setTherapists] = useState<Profile[]>([]);
-  const [selectedTherapist, setSelectedTherapist] = useState<string | null>(null);
-  const [date, setDate] = useState(() => dayjs().startOf('day'));
+  // terapeutas y selección
+  const [therapists, setTherapists] = useState<Therapist[]>([]);
+  const [tId, setTId] = useState<string>('');
+
+  // calendario mensual (compacto)
+  const [viewMonth, setViewMonth] = useState(()=>dayjs().startOf('month'));
+  const monthLabel = viewMonth.format('MMMM YYYY');
+  const first = viewMonth.startOf('month');
+  const dowMon0 = (first.day() + 6) % 7;    // Lunes=0
+  const gridStart = first.subtract(dowMon0, 'day');
+  const days = useMemo(()=>Array.from({length: 42}, (_,i)=>gridStart.add(i,'day')), [gridStart]);
+
+  // día y horas
+  const [date, setDate] = useState(()=>dayjs().startOf('day'));
+  const dayStart = useMemo(()=>date.hour(8).minute(0).second(0), [date]);
+  const dayEnd   = useMemo(()=>date.hour(20).minute(0).second(0), [date]);
+  const slots = useMemo(()=>range30(dayStart, dayEnd), [dayStart, dayEnd]);
+
+  // ocupación y reserva
   const [busy, setBusy] = useState<BusySlot[]>([]);
-  const [ownAppointments, setOwnAppointments] = useState<Appointment[]>([]);
-  const [creating, setCreating] = useState<{ start: string } | null>(null);
+  const [creating, setCreating] = useState<string|null>(null);
+  const [form, setForm] = useState({ name:'', phone:'', service:'Reiki', note:'' });
+  const [msg, setMsg] = useState('');
 
-  const dayStart = useMemo(() => date.hour(8).minute(0).second(0), [date]);
-  const dayEnd = useMemo(() => date.hour(20).minute(0).second(0), [date]);
-  const slots = useMemo(() => range30(dayStart, dayEnd), [dayStart, dayEnd]);
-
-  useEffect(() => {
-    supabase.from('profiles').select('id, full_name, role').then(({ data, error }) => {
-      if (!error && data) {
-        setTherapists(data as Profile[]);
-        // Si hay un usuario logueado, lo seleccionamos por defecto. Si no, el primero de la lista.
-        if (userId) {
-          setSelectedTherapist(userId);
-        } else if (data.length > 0) {
-          setSelectedTherapist(data[0].id);
-        }
-      }
-    });
-  }, [userId]);
-
-  useEffect(() => {
-    if (!selectedTherapist) return;
-    (async () => {
-      const { data: busyData } = await supabase.rpc('get_busy_slots', { t_id: selectedTherapist, day: date.format('YYYY-MM-DD') });
-      setBusy((busyData || []) as BusySlot[]);
-      if (selectedTherapist === userId) {
-        const fromISO = toISO(dayStart.toDate());
-        const toISOv = toISO(dayEnd.toDate());
-        const { data } = await supabase.from('appointments').select('*').gte('start_at', fromISO).lt('start_at', toISOv).order('start_at');
-        setOwnAppointments((data || []) as Appointment[]);
-      } else {
-        setOwnAppointments([]);
+  // cargar terapeutas
+  useEffect(()=>{
+    (async ()=>{
+      const { data } = await supabase.rpc('list_therapists');
+      if(data){
+        setTherapists(data as Therapist[]);
+        if(!tId && data.length) setTId((data as Therapist[])[0].id);
       }
     })();
-  }, [selectedTherapist, date, userId, dayStart, dayEnd]);
+  },[]);
 
-  function isOccupied(iso: string) {
+  // cargar ocupación
+  useEffect(()=>{
+    if(!tId) return;
+    (async ()=>{
+      const { data } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
+      setBusy((data||[]) as BusySlot[]);
+    })();
+  },[tId, date]);
+
+  function isOccupied(iso: string){
     const s = dayjs(iso);
-    return busy.some(b => {
+    return busy.some(b=>{
       const a = dayjs(b.start_at), e = dayjs(b.end_at);
       return (s.isSame(a) || (s.isAfter(a) && s.isBefore(e)));
     });
   }
-  function ownDetails(iso: string): Appointment | null {
-    const s = dayjs(iso);
-    return ownAppointments.find(a => dayjs(a.start_at).isSame(s)) || null;
-  }
 
-  const isOwnAgenda = selectedTherapist === userId;
-
-  return (
-    <div className="max-w-md mx-auto p-4 space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <button className="px-3 py-2 rounded-xl border" onClick={() => setDate(d => d.add(-1, 'day'))}>◀︎</button>
-        <div className="text-center">
-          <div className="text-sm text-gray-500">{date.format('dddd')}</div>
-          <div className="text-lg font-semibold">{date.format('DD/MM/YYYY')}</div>
-        </div>
-        <button className="px-3 py-2 rounded-xl border" onClick={() => setDate(d => d.add(1, 'day'))}>▶︎</button>
-      </div>
-      <select className="w-full border rounded-xl px-3 py-2" value={selectedTherapist ?? ''} onChange={e => setSelectedTherapist(e.target.value)}>
-        {therapists.map(t => (<option key={t.id} value={t.id}>{t.full_name || 'Terapeuta'}</option>))}
-      </select>
-      <div className="grid grid-cols-1 gap-2">
-        {slots.map((s, idx) => {
-          const startISO = toISO(s.toDate());
-          const label = s.format('HH:mm');
-          const occupied = isOccupied(startISO);
-          const details = isOwnAgenda ? ownDetails(startISO) : null;
-          return (
-            <button key={idx} disabled={occupied && !details} onClick={() => { if (!occupied && isOwnAgenda) setCreating({ start: startISO }); }} className={`flex items-center justify-between rounded-2xl border px-3 py-3 ${occupied ? 'bg-gray-100' : 'bg-white'} ${(!occupied && isOwnAgenda) ? 'active:scale-[.99] transition' : ''}`}>
-              <span className="font-medium">{label}</span>
-              {occupied ? (details ? (<span className="text-left text-sm"><b>{details.service || 'Turno'}</b><span className="block text-gray-600">Paciente asignado</span></span>) : (<span className="text-gray-500">Ocupado</span>)) : (isOwnAgenda ? <span className="text-green-600">Libre</span> : <span className="text-gray-400">—</span>)}
-            </button>
-          );
-        })}
-      </div>
-      {creating && (<CreateDialog startISO={creating.start} onClose={() => setCreating(null)} onCreated={() => { setCreating(null); setDate(d => d.clone()); }} therapistId={userId!} />)}
-    </div>
-  );
-}
-
-function CreateDialog({ startISO, onClose, onCreated, therapistId }: { startISO: string; onClose: () => void; onCreated: () => void; therapistId: string; }) {
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [service, setService] = useState('Reiki');
-  const [note, setNote] = useState('');
-  const [saving, setSaving] = useState(false);
-  const start = dayjs(startISO);
-
-  async function save() {
-    setSaving(true);
+  async function book() {
+    if (!creating || !tId) return;
+    setMsg('');
     try {
-      const { error } = await supabase.rpc('book_appointment', {
-        t_id: therapistId,
-        start_at: startISO,
-        patient_name: name.trim(),
-        phone: phone.trim(),
-        service: service.trim(),
-        note: note.trim(),
-      });
-      if (error) throw error;
-      onCreated();
-    } catch (e) {
-      alert('Error guardando turno.');
-      console.error(e);
-    } finally { setSaving(false); }
+      const payload = {
+        t_id: tId,
+        start_at: new Date(creating).toISOString(),
+        patient_name: (form.name || '').trim() || null,
+        phone: (form.phone || '').trim(),
+        service: (form.service || 'Reiki').trim(),
+        note: (form.note || '').trim() || null,
+      };
+      const { error } = await supabase.rpc('book_appointment', payload);
+      if (error) {
+        console.error('RPC book_appointment error:', error);
+        const serverText = ((error as any)?.details as string) || ((error as any)?.hint as string) || (error.message ?? '');
+        const low = serverText.toLowerCase();
+        const userMsg =
+          low.includes('phone_required') ? 'El teléfono es obligatorio.' :
+          low.includes('slot_taken')     ? 'Ese horario ya fue reservado.' :
+          (low.includes('not null') && low.includes('phone')) ? 'El teléfono es obligatorio.' :
+          serverText || 'No se pudo reservar. Probá nuevamente.';
+        setMsg(userMsg);
+        return;
+      }
+      const tf = therapists.find(t => t.id === tId)?.full_name || 'tu terapeuta';
+      setMsg(`Tu cita con “${tf}” se agendó para ${dayjs(creating).format('dddd D [de] MMMM')} a las ${dayjs(creating).format('HH:mm')} hs.`);
+      setCreating(null);
+      const { data: busyData } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
+      setBusy((busyData || []) as BusySlot[]);
+      setForm({ name: '', phone: '', service: 'Reiki', note: '' });
+    } catch (e: any) {
+      console.error('book() exception:', e);
+      setMsg('Error de red. Verificá conexión e intenta nuevamente.');
+    }
   }
 
+  // --- NUEVO: Lógica para asignar colores a los terapeutas ---
+  const therapistColorClass = useMemo(() => {
+    const index = therapists.findIndex(t => t.id === tId);
+    if (index === -1) return 'bg-white'; // Color por defecto
+    const colorIndex = index % therapistColors.length;
+    return therapistColors[colorIndex];
+  }, [therapists, tId]);
+
+  // UI
   return (
-    <div className="fixed inset-0 bg-black/30 flex items-end sm:items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl p-4 space-y-3">
-        <div className="font-semibold">Nuevo turno — {start.format('DD/MM HH:mm')}</div>
-        <input className="w-full border rounded-xl px-3 py-2" placeholder="Nombre del paciente" value={name} onChange={e => setName(e.target.value)} />
-        <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono (opcional)" value={phone} onChange={e => setPhone(e.target.value)} />
-        <input className="w-full border rounded-xl px-3 py-2" placeholder="Servicio (p.ej. Reiki)" value={service} onChange={e => setService(e.target.value)} />
-        <textarea className="w-full border rounded-xl px-3 py-2" placeholder="Nota (opcional)" value={note} onChange={e => setNote(e.target.value)} />
-        <div className="flex gap-2 justify-end">
-          <button className="px-4 py-2 rounded-xl border" onClick={onClose} disabled={saving}>Cancelar</button>
-          <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={save} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button>
+    <>
+      <Header />
+      {/* barra de “pasos” */}
+      <div className="bg-white border-b">
+        <div className="max-w-5xl mx-auto px-4 py-2 flex gap-2 text-sm">
+          <Step label="Agenda tu cita" active={step>=1}/>
+          <Step label="Selecciona tu Terapeuta" active={step>=2}/>
+          <Step label="Selecciona tu Día" active={step>=3}/>
+          <Step label="Selecciona tu Hora" active={step>=4}/>
         </div>
       </div>
+
+      <div className="max-w-5xl mx-auto p-4 space-y-6">
+        {/* selector de terapeuta */}
+        <div className="flex items-center justify-between">
+          <select
+            className="border rounded-xl px-3 py-2"
+            value={tId}
+            onChange={e=>{ setTId(e.target.value); setStep(s=>Math.max(s,2)); }}
+          >
+            {therapists.map(t => <option key={t.id} value={t.id}>{t.full_name || 'Terapeuta'}</option>)}
+          </select>
+
+          <div className="flex items-center gap-2">
+            <button className="px-3 py-2 rounded-xl border" onClick={()=>setViewMonth(m=>m.add(-1,'month'))}>◀︎</button>
+            <div className="min-w-[10rem] text-center capitalize font-semibold">{monthLabel}</div>
+            <button className="px-3 py-2 rounded-xl border" onClick={()=>setViewMonth(m=>m.add(1,'month'))}>▶︎</button>
+          </div>
+        </div>
+
+        {/* calendario compacto */}
+        <div className="flex justify-center">
+          <div className="w-full max-w-md border rounded-2xl p-3">
+            <div className="grid grid-cols-7 text-center text-xs text-gray-600 mb-2">
+              {WEEKDAYS.map(d => <div key={d} className="py-1">{d}</div>)}
+            </div>
+            <div className="grid grid-cols-7 gap-1">
+              {days.map((d,i)=>{
+                const isThisMonth = d.month() === viewMonth.month();
+                const isSelected = d.isSame(date,'day');
+                const isToday = d.isSame(dayjs(),'day');
+                return (
+                  <button
+                    key={i}
+                    onClick={()=>{ setDate(d.startOf('day')); setStep(s=>Math.max(s,3)); }}
+                    className={[
+                      "h-9 rounded-xl border text-sm",
+                      isSelected ? "bg-black text-white border-black" : "bg-white",
+                      !isThisMonth ? "opacity-40" : "",
+                      isToday && !isSelected ? "border-black" : ""
+                    ].join(' ')}
+                    title={d.format('DD/MM/YYYY')}
+                  >
+                    {d.format('D')}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* horas del día */}
+        <div>
+          <div className="text-center mb-2">
+            <div className="text-sm text-gray-500 capitalize">{date.format('dddd')}</div>
+            <div className="text-lg font-semibold">{date.format('DD/MM/YYYY')}</div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {slots.map((s:any, idx:number)=>{
+              const startISO = toISO(s.toDate());
+              const label = s.format('HH:mm');
+              const occupied = isOccupied(startISO);
+
+              // --- MODIFICADO: Ocultar slots ocupados ---
+              if (occupied) {
+                return null; // No se renderiza el botón
+              }
+
+              return (
+                <button key={idx}
+                  onClick={()=>{ setCreating(startISO); setStep(4); }}
+                  // --- MODIFICADO: Aplicar color de terapeuta ---
+                  className={`flex items-center justify-between rounded-2xl border px-3 py-3 transition active:scale-[.99] ${therapistColorClass}`}
+                >
+                  <span className="font-medium">{label}</span>
+                  <span className="text-green-600">Libre</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Modal guía inicial */}
+      {step===1 && (
+        <GuideModal onClose={()=>setStep(2)} />
+      )}
+
+      {/* Modal de reserva pública */}
+      {creating && (
+        <div className="fixed inset-0 bg-black/30 flex items-end sm:items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-2xl p-4 space-y-3">
+            <div className="font-semibold">Reservar — {dayjs(creating).format('dddd D [de] MMMM HH:mm')}</div>
+            <input className="w-full border rounded-xl px-3 py-2" placeholder="Tu nombre (opcional)" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} />
+            <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono (obligatorio)" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} />
+            <input className="w-full border rounded-xl px-3 py-2" placeholder="Servicio (ej. Reiki)" value={form.service} onChange={e=>setForm({...form, service: e.target.value})} />
+            <textarea className="w-full border rounded-xl px-3 py-2" placeholder="Nota (opcional)" value={form.note} onChange={e=>setForm({...form, note: e.target.value})} />
+            {msg && <p className="text-sm text-blue-700">{msg}</p>}
+            <div className="flex gap-2 justify-end">
+              <button className="px-4 py-2 rounded-xl border" onClick={()=>setCreating(null)}>Cancelar</button>
+              <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={book}>Confirmar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Step({label, active}:{label:string; active:boolean}) {
+  return (
+    <div className={`flex items-center gap-2 ${active ? 'opacity-100' : 'opacity-40'}`}>
+      <div className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] ${active?'bg-black text-white border-black':'bg-white'}`}>
+        ✓
+      </div>
+      <div>{label}</div>
     </div>
   );
 }
 
-// --- COMPONENTE PRINCIPAL DE LA PÁGINA ---
-export default function PublicBooking() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setLoading(false);
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s);
-    });
-    return () => { sub.subscription.unsubscribe(); };
-  }, []);
-
-  if (loading) {
-    return (
-      <>
-        <Header />
-        <div className="p-6 text-center">Cargando agenda…</div>
-      </>
-    );
-  }
-
+function GuideModal({ onClose }:{ onClose:()=>void }) {
   return (
-    <div>
-      <Header />
-      <Scheduler userId={session?.user?.id ?? null} />
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Agenda tu cita</h2>
+        <ol className="list-decimal pl-5 space-y-1 text-sm">
+          <li>Selecciona tu Terapeuta.</li>
+          <li>Elige el día en el calendario.</li>
+          <li>Elige la hora disponible.</li>
+          <li>Completa tu <b>teléfono</b> y confirma.</li>
+        </ol>
+        <div className="flex justify-end">
+          <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={onClose}>Entendido</button>
+        </div>
+      </div>
     </div>
   );
 }
