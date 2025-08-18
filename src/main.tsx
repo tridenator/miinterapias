@@ -1,45 +1,15 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
-
-import { supabase } from './lib/supabase';               // ⬅️ importa el cliente
-const qs = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-if ((import.meta as any).env?.DEV || qs?.has('debug')) { // ⬅️ solo dev o ?debug=1
-  // @ts-ignore
-  (window as any).supabase = supabase;
-  console.log('[debug] supabase expuesto', supabase);   // ⬅️ verás esto en Console
-}
-
-import PublicBooking from './pages/PublicBooking';
-import TherapistPanel from './pages/TherapistPanel';
-import RequireTherapist from './routes/RequireTherapist';
-import RequireAdmin from './routes/RequireAdmin';
-import AdminPanel from './pages/AdminPanel';
-
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<PublicBooking />} />
-        <Route
-          path="/panel"
-          element={
-            <RequireTherapist>
-              <TherapistPanel />
-            </RequireTherapist>
-          }
-        />
-        <Route
-          path="/panel/admin"
-          element={
-            <RequireAdmin>
-              <AdminPanel />
-            </RequireAdmin>
-          }
-        />
-      </Routes>
-    </BrowserRouter>
+    <div className="p-10">
+      <h1 className="text-2xl font-bold">Prueba de main.tsx</h1>
+      <p className="mt-4">
+        Si puedes ver este mensaje, el problema está en tu configuración de rutas
+        o en uno de tus componentes de página (PublicBooking, TherapistPanel, etc.).
+      </p>
+    </div>
   </React.StrictMode>
 );
