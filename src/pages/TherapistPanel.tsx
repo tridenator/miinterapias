@@ -4,7 +4,6 @@ import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
 
 // --- TIPOS Y FUNCIONES ---
-// Extendemos el tipo Appointment para incluir la información del paciente
 type Patient = { full_name: string; phone: string | null };
 type Appointment = { 
   id: string; 
@@ -15,9 +14,9 @@ type Appointment = {
   status: 'scheduled' | 'cancelled' | 'no_show' | 'blocked'; 
   service: string | null; 
   note: string | null;
-  patients: Patient | null; // Relación para obtener el nombre y teléfono
+  patients: Patient | null;
 };
-type Profile = { id: string; full_name: string; role: 'admin' | 'therapist' };
+type Profile = { id: string; full_name: string; phone: string | null; role: 'admin' | 'therapist' };
 type BusySlot = { start_at: string; end_at: string; status: string };
 
 function toISO(date: Date) { return date.toISOString(); }
@@ -29,50 +28,36 @@ function range30(start: dayjs.Dayjs, end: dayjs.Dayjs) {
 }
 
 // --- COMPONENTE SCHEDULER DEL PANEL ---
-function Scheduler({ userId }: { userId: string }) {
-  const [therapists, setTherapists] = useState<Profile[]>([]);
-  const [selectedTherapist, setSelectedTherapist] = useState<string>(userId);
+function Scheduler({ userId, userProfile }: { userId: string, userProfile: Profile }) {
   const [date, setDate] = useState(() => dayjs().startOf('day'));
   const [busy, setBusy] = useState<BusySlot[]>([]);
-  const [ownAppointments, setOwnAppointments] = useState<Appointment[]>([]);
-  const [viewingAppointment, setViewingAppointment] = useState<Appointment | null>(null); // <-- NUEVO: Para el modal de detalles
+  const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
+  const [viewingAppointment, setViewingAppointment] = useState<Appointment | null>(null);
+  const [isBookingManually, setIsBookingManually] = useState<string | null>(null); // Contendrá el ISO del slot a agendar
 
   const dayStart = useMemo(() => date.hour(8).minute(0).second(0), [date]);
   const dayEnd = useMemo(() => date.hour(20).minute(0).second(0), [date]);
   const slots = useMemo(() => range30(dayStart, dayEnd), [dayStart, dayEnd]);
 
-  useEffect(() => {
-    supabase.from('profiles').select('id, full_name').then(({ data }) => {
-      if (data) setTherapists(data as Profile[]);
-    });
-  }, []);
+  // Función para recargar las citas del día
+  const refreshAppointments = async () => {
+    const { data: busyData } = await supabase.rpc('get_all_busy_slots', { day: date.format('YYYY-MM-DD') });
+    setBusy((busyData || []) as BusySlot[]);
+
+    const fromISO = toISO(dayStart.toDate());
+    const toISOv = toISO(dayEnd.toDate());
+    const { data } = await supabase
+      .from('appointments')
+      .select('*, patients (full_name, phone)')
+      .gte('start_at', fromISO)
+      .lt('start_at', toISOv)
+      .order('start_at');
+    setAllAppointments((data || []) as Appointment[]);
+  };
 
   useEffect(() => {
-    if (!selectedTherapist) return;
-    (async () => {
-      // Siempre obtenemos los slots ocupados para saber qué está bloqueado
-      const { data: busyData } = await supabase.rpc('get_busy_slots', { t_id: selectedTherapist, day: date.format('YYYY-MM-DD') });
-      setBusy((busyData || []) as BusySlot[]);
-
-      // Si es la agenda del propio terapeuta, cargamos todos los detalles
-      if (selectedTherapist === userId) {
-        const fromISO = toISO(dayStart.toDate());
-        const toISOv = toISO(dayEnd.toDate());
-        // Hacemos un join para traer también el nombre y teléfono del paciente
-        const { data } = await supabase
-          .from('appointments')
-          .select('*, patients (full_name, phone)')
-          .eq('therapist_id', userId)
-          .gte('start_at', fromISO)
-          .lt('start_at', toISOv)
-          .order('start_at');
-        setOwnAppointments((data || []) as Appointment[]);
-      } else {
-        // Si vemos la agenda de otro, limpiamos los detalles
-        setOwnAppointments([]);
-      }
-    })();
-  }, [selectedTherapist, date, userId, dayStart, dayEnd]);
+    refreshAppointments();
+  }, [date, dayStart, dayEnd]);
 
   function isOccupied(iso: string) {
     const s = dayjs(iso);
@@ -82,14 +67,8 @@ function Scheduler({ userId }: { userId: string }) {
     });
   }
 
-  const isOwnAgenda = selectedTherapist === userId;
-
   return (
     <div className="max-w-md mx-auto p-4 space-y-4">
-      <select className="w-full border rounded-xl px-3 py-2" value={selectedTherapist} onChange={e => setSelectedTherapist(e.target.value)}>
-        {therapists.map(t => (<option key={t.id} value={t.id}>{t.full_name || 'Terapeuta'}</option>))}
-      </select>
-      
       <div className="flex items-center justify-between gap-2">
         <button className="px-3 py-2 rounded-xl border" onClick={() => setDate(d => d.add(-1, 'day'))}>◀︎</button>
         <div className="text-center">
@@ -105,51 +84,63 @@ function Scheduler({ userId }: { userId: string }) {
           const label = s.format('HH:mm');
           const occupied = isOccupied(startISO);
           
-          // Buscamos los detalles completos solo si es la agenda propia
-          const details = isOwnAgenda ? ownAppointments.find(a => dayjs(a.start_at).isSame(s)) : null;
+          const appointmentDetails = occupied ? allAppointments.find(a => dayjs(a.start_at).isSame(s)) : null;
+          const isOwnAppointment = appointmentDetails?.therapist_id === userId;
 
           return (
             <button 
               key={idx} 
-              disabled={!details && occupied} // Se deshabilita si está ocupado y no tenemos detalles (agenda ajena)
+              disabled={occupied && !isOwnAppointment}
               onClick={() => {
-                if (details) setViewingAppointment(details); // <-- NUEVO: Abrir modal al hacer clic
+                if (isOwnAppointment) setViewingAppointment(appointmentDetails);
+                if (!occupied) setIsBookingManually(startISO);
               }}
               className={`flex items-center justify-between rounded-2xl border px-3 py-3 transition ${
-                details ? 'bg-blue-50 border-blue-300 hover:shadow-md cursor-pointer' : 
-                occupied ? 'bg-gray-100 cursor-not-allowed' : 
-                'bg-white hover:bg-gray-50'
+                isOwnAppointment ? 'bg-blue-50 border-blue-300 hover:shadow-md cursor-pointer' : 
+                occupied ? 'bg-gray-100 border-gray-200 cursor-not-allowed' : 
+                'bg-white hover:bg-gray-50 cursor-pointer'
               }`}
             >
               <span className="font-medium">{label}</span>
-              {details ? (
+              {isOwnAppointment ? (
                 <span className="text-left text-sm">
-                  <b>{details.patients?.full_name || 'Cita'}</b>
-                  <span className="block text-gray-600">{details.service || 'Servicio'}</span>
+                  <b>{appointmentDetails.patients?.full_name || 'Cita'}</b>
+                  <span className="block text-gray-600">{appointmentDetails.service || 'Servicio'}</span>
                 </span>
               ) : occupied ? (
                 <span className="text-gray-500">Ocupado</span>
               ) : (
-                <span className="text-green-600">Libre</span>
+                <span className="text-green-600">Agendar</span>
               )}
             </button>
           );
         })}
       </div>
       
-      {/* --- NUEVO: Renderizar el modal si hay una cita seleccionada --- */}
       {viewingAppointment && (
         <AppointmentDetailsModal 
           appointment={viewingAppointment} 
           onClose={() => setViewingAppointment(null)} 
         />
       )}
+      {isBookingManually && (
+        <ManualBookingModal
+          startISO={isBookingManually}
+          therapistId={userId}
+          onClose={() => setIsBookingManually(null)}
+          onSuccess={() => {
+            setIsBookingManually(null);
+            refreshAppointments(); // Recargamos la agenda
+          }}
+        />
+      )}
     </div>
   );
 }
 
-// --- NUEVO: Modal para mostrar los detalles de la cita ---
+// --- MODALES ---
 function AppointmentDetailsModal({ appointment, onClose }: { appointment: Appointment, onClose: () => void }) {
+  // ... (sin cambios)
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-4">
@@ -176,15 +167,100 @@ function AppointmentDetailsModal({ appointment, onClose }: { appointment: Appoin
   );
 }
 
+function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { startISO: string; therapistId: string; onClose: () => void; onSuccess: () => void; }) {
+  const [form, setForm] = useState({ name: '', phone: '', service: 'Reiki', note: '' });
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const { error } = await supabase.rpc('book_appointment', {
+        t_id: therapistId,
+        start_at: startISO,
+        patient_name: form.name.trim(),
+        phone: form.phone.trim(),
+        service: form.service.trim(),
+        note: form.note.trim(),
+      });
+      if (error) throw error;
+      onSuccess();
+    } catch (e) {
+      alert('Error al agendar la cita.');
+      console.error(e);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Agendar Paciente</h2>
+        <p className="text-sm text-gray-500">
+          {dayjs(startISO).format('dddd D [de] MMMM, HH:mm')} hs
+        </p>
+        <input className="w-full border rounded-xl px-3 py-2" placeholder="Nombre del paciente" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} />
+        <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} />
+        <input className="w-full border rounded-xl px-3 py-2" placeholder="Servicio" value={form.service} onChange={e=>setForm({...form, service: e.target.value})} />
+        <textarea className="w-full border rounded-xl px-3 py-2" placeholder="Nota (opcional)" value={form.note} onChange={e=>setForm({...form, note: e.target.value})} />
+        <div className="flex gap-2 justify-end">
+          <button className="px-4 py-2 rounded-xl border" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProfileEditModal({ profile, onClose, onSuccess }: { profile: Profile; onClose: () => void; onSuccess: (updatedProfile: Profile) => void; }) {
+  const [fullName, setFullName] = useState(profile.full_name || '');
+  const [phone, setPhone] = useState(profile.phone || '');
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ full_name: fullName, phone: phone })
+      .eq('id', profile.id)
+      .select()
+      .single();
+    if (error) {
+      alert('Error al actualizar el perfil.');
+      console.error(error);
+    } else if (data) {
+      onSuccess(data as Profile);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
+      <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-3">
+        <h2 className="text-lg font-semibold">Editar Mi Perfil</h2>
+        <input className="w-full border rounded-xl px-3 py-2" placeholder="Nombre completo" value={fullName} onChange={e => setFullName(e.target.value)} />
+        <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono" value={phone} onChange={e => setPhone(e.target.value)} />
+        <div className="flex gap-2 justify-end">
+          <button className="px-4 py-2 rounded-xl border" onClick={onClose} disabled={saving}>Cancelar</button>
+          <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 // --- COMPONENTE PRINCIPAL DEL PANEL ---
 export default function TherapistPanel() {
-  const [userId, setUserId] = useState<string | null>(null);
+  const [userProfile, setUserProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (user) {
-        setUserId(user.id);
+        const { data: profile } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+        setUserProfile(profile);
       }
       setLoading(false);
     });
@@ -194,14 +270,27 @@ export default function TherapistPanel() {
     return <div>Cargando panel...</div>;
   }
 
-  if (!userId) {
-    return <div className="p-6">Error: No se pudo cargar el usuario. <a href="/" className="underline">Volver</a></div>;
+  if (!userProfile) {
+    return <div className="p-6">Error: No se pudo cargar el perfil. <a href="/" className="underline">Volver</a></div>;
   }
 
   return (
     <div>
       <Header />
-      <Scheduler userId={userId} />
+      <div className="max-w-md mx-auto p-4 flex justify-end gap-2">
+        <button onClick={() => setIsEditingProfile(true)} className="px-4 py-2 text-sm rounded-xl border bg-white">Mi Perfil</button>
+      </div>
+      <Scheduler userId={userProfile.id} userProfile={userProfile} />
+      {isEditingProfile && (
+        <ProfileEditModal
+          profile={userProfile}
+          onClose={() => setIsEditingProfile(false)}
+          onSuccess={(updatedProfile) => {
+            setUserProfile(updatedProfile);
+            setIsEditingProfile(false);
+          }}
+        />
+      )}
     </div>
   );
 }
