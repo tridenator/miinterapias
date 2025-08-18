@@ -223,7 +223,7 @@ function PatientFile({ patient, appointments, onEdit, onUpdateAppointments }: { 
   );
 }
 
-// --- MODIFICADO: Componente ByosenChart con imágenes ---
+// --- MODIFICADO: Componente ByosenChart con SVG incrustado ---
 function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: ByosenPoint[], onPointsChange?: (points: ByosenPoint[]) => void, isReadOnly?: boolean }) {
   const [view, setView] = useState<'front' | 'side' | 'back'>('front');
 
@@ -234,7 +234,7 @@ function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: B
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
     
-    const existingPoint = points.find(p => p.view === view && Math.hypot(p.x - x, p.y - y) < 2); // Check distance
+    const existingPoint = points.find(p => p.view === view && Math.hypot(p.x - x, p.y - y) < 2);
     if (existingPoint) {
       onPointsChange(points.filter(p => p !== existingPoint));
     } else {
@@ -242,10 +242,10 @@ function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: B
     }
   };
 
-  const imageUrls = {
-    front: 'https://i.imgur.com/gY2SE28.png',
-    side: 'https://i.imgur.com/A0N2t46.png',
-    back: 'https://i.imgur.com/k2AU7nd.png'
+  const svgPaths = {
+    front: <path fill="#E2E8F0" stroke="#A0AEC0" strokeWidth="0.5" d="M60.6,10.3c-2.4-2-5.7-3.3-9.3-3.3c-7.5,0-13.6,5.8-13.6,13c0,7.2,6.1,13,13.6,13c3.6,0,6.9-1.3,9.3-3.3 c2.4-2,4-4.8,4-7.9C64.5,15.1,63,12.3,60.6,10.3z M51.3,42.5c-1.5,0-2.8-0.2-4.1-0.6l0.1,0.1V46h8.1v-3.9l0.1,0.1 c-1.3,0.4-2.6,0.6-4.1,0.6z M47.8,49.3v25.8l-5.4,35.7l-2,13.5h6l2-15.1l3.4-22.7h4v-24H47.8z M52.2,49.3v24h4v-24H52.2z M59.6,75.1l3.4,22.7l2,15.1h6l-2-13.5l-5.4-35.7V49.3h-4v24h4V75.1z"/>,
+    side: <path fill="#E2E8F0" stroke="#A0AEC0" strokeWidth="0.5" d="M50.7,6.9c-4.4,0-8.5,1.7-11.5,4.6c-3,2.9-4.6,6.9-4.6,11.1c0,4.2,1.6,8.2,4.6,11.1c3,2.9,7.1,4.6,11.5,4.6 c4.4,0,8.5-1.7,11.5-4.6c3-2.9,4.6-6.9,4.6-11.1C66.8,15.5,60.5,6.9,50.7,6.9z M50.7,42c-1.7,0-3.4-0.3-5-0.8V46h1.9v24h-1.9v3.9 l-2,13.5v15.1h4v-15.1l-2-13.5V70h1.9V46h1.9v-4.8C54.1,41.7,52.4,42,50.7,42z"/>,
+    back: <path fill="#E2E8F0" stroke="#A0AEC0" strokeWidth="0.5" d="M60.6,10.3c-2.4-2-5.7-3.3-9.3-3.3c-7.5,0-13.6,5.8-13.6,13c0,7.2,6.1,13,13.6,13c3.6,0,6.9-1.3,9.3-3.3 c2.4-2,4-4.8,4-7.9C64.5,15.1,63,12.3,60.6,10.3z M51.3,42.5c-1.5,0-2.8-0.2-4.1-0.6l0.1,0.1V46h8.1v-3.9l0.1,0.1 c-1.3,0.4-2.6,0.6-4.1,0.6z M47.8,49.3v25.8l-5.4,35.7l-2,13.5h6l2-15.1l3.4-22.7h4v-24H47.8z M52.2,49.3v24h4v-24H52.2z M59.6,75.1l3.4,22.7l2,15.1h6l-2-13.5l-5.4-35.7V49.3h-4v24h4V75.1z"/>
   };
 
   return (
@@ -263,8 +263,8 @@ function ByosenChart({ points, onPointsChange, isReadOnly = false }: { points: B
         ))}
       </div>
       <div className="flex justify-center">
-        <svg viewBox="0 0 100 180" onClick={handleClick} className={`w-48 bg-gray-50 rounded ${isReadOnly ? '' : 'cursor-crosshair'}`}>
-          <image href={imageUrls[view]} x="0" y="0" width="100" height="180" />
+        <svg viewBox="0 0 100 130" onClick={handleClick} className={`w-48 bg-white rounded ${isReadOnly ? '' : 'cursor-crosshair'}`}>
+          {svgPaths[view]}
           {points.filter(p => p.view === view).map((p, i) => (
             <circle key={i} cx={p.x} cy={p.y} r="2.5" fill="red" stroke="white" strokeWidth="0.5" />
           ))}
