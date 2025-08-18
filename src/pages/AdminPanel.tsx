@@ -18,7 +18,8 @@ export default function AdminPanel() {
 
     let ok = false;
     try {
-      const { data, error } = await supabase.rpc('is_admin', { uid: user.id as any });
+      // ❌ antes: supabase.rpc('is_admin', { uid: user.id })
+      const { data, error } = await supabase.rpc('is_admin'); // ✅ sin params
       ok = !!data && !error;
     } catch {
       ok = false;
@@ -35,6 +36,7 @@ export default function AdminPanel() {
     setLoading(false);
   })();
 }, []);
+
 const filtered = rows.filter(r => {
     const s = (r.full_name || '').toLowerCase();
     return q ? s.includes(q.toLowerCase()) || r.id.includes(q) : true;
