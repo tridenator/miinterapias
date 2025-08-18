@@ -80,9 +80,11 @@ function Login() {
 export default function App() {
   const { session, loading } = useSession();
   if (loading) return <div className="p-6 text-center">Cargando…</div>;
-  if (!session) return <Login />;
   
-  // Si hay sesión, mostramos el Header y el Scheduler
+  // MODIFICADO: Verificamos también que exista el usuario en la sesión
+  if (!session || !session.user) return <Login />;
+  
+  // Si hay sesión y usuario, mostramos el Header y el Scheduler
   return (
     <div>
       {/* 2. USAMOS TU HEADER SIN PASARLE PROPS */}
