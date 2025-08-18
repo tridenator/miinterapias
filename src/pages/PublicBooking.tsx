@@ -83,15 +83,16 @@ export default function PublicBooking(){
 
   try {
     const payload = {
-      t_id: tId,
-      start_at: new Date(creating).toISOString(),   // ISO válido para timestamptz
-      patient_name: (form.name || '').trim() || null,
-      phone: (form.phone || '').trim(),
-      service: (form.service || 'Reiki').trim(),
-      note: (form.note || '').trim() || null,
-    };
+  t_id: tId,                                  // uuid terapeuta
+  start_at: new Date(creating).toISOString(), // ISO válido
+  patient_name: (form.name || '').trim() || null,
+  phone: (form.phone || '').trim(),
+  service: (form.service || 'Reiki').trim(),
+  note: (form.note || '').trim() || null,
+};
 
-    const { data, error } = await supabase.rpc('book_appointment', payload);
+const { data, error } = await supabase.rpc('book_appointment', payload);
+
 
     if (error) {
       // Log completo para depurar
