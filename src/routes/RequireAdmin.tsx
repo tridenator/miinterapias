@@ -8,7 +8,7 @@ export default function RequireAdmin({ children }: { children: React.ReactNode }
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return setOk(false);
-      const { data, error } = await supabase.rpc('is_admin'); // ✅ sin params
+      const { data, error } = await supabase.rpc('is_admin');     // ✅ sin params
       setOk(Boolean(data && !error));
     })();
   }, []);
