@@ -1,10 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
-// Importaremos Scheduler desde App.tsx en el siguiente paso
 import { Scheduler } from '../App'; 
-
-// Este es el verdadero panel de terapeuta, es su propia página.
 export default function TherapistPanel() {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -18,13 +15,11 @@ export default function TherapistPanel() {
     });
   }, []);
 
-  // Mientras carga, mostramos un mensaje
-  if (loading) {
+   if (loading) {
     return <div>Cargando panel...</div>;
   }
 
-  // Si por alguna razón no hay usuario, no mostramos el panel
-  if (!userId) {
+ if (!userId) {
     return <div className="p-6">Error: No se pudo cargar el usuario. <a href="/" className="underline">Volver</a></div>;
   }
 
