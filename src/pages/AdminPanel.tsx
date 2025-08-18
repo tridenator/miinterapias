@@ -35,9 +35,7 @@ export default function AdminPanel() {
     setLoading(false);
   })();
 }, []);
-
-
-  const filtered = rows.filter(r => {
+const filtered = rows.filter(r => {
     const s = (r.full_name || '').toLowerCase();
     return q ? s.includes(q.toLowerCase()) || r.id.includes(q) : true;
   });
