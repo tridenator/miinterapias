@@ -1,12 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import defaultByosenImage from '../byosen/sheet.png';
-export type ByosenPoint = { x: number; y: number }; // x,y normalizados 0..1
-const VB_W = 100; // ancho lógico; alto se calcula por la relación de la imagen
+// 1. Importa la imagen aquí
+import defaultByosenImage from '../byosen/sheet.png'; 
+
+export type ByosenPoint = { x: number; y: number };
+
+const VB_W = 100;
+
 export default function ByosenSheet({
   points,
   onPointsChange,
   isReadOnly = false,
- src = defaultByosenImage,
+  // 2. Usa la variable importada como valor por defecto
+  src = defaultByosenImage, 
 }: {
   points: ByosenPoint[];
   onPointsChange?: (pts: ByosenPoint[]) => void;
