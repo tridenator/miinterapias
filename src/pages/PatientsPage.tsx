@@ -4,7 +4,7 @@ import { supabase } from "../lib/supabase";
 import Header from "../components/Header";
 import { Link } from "react-router-dom";
 
-// Lámina de Byosen (puntos normalizados 0..1 en una sola imagen)
+// --- MODIFICADO: Importamos tu componente y su tipo ---
 import ByosenSheet, { ByosenPoint } from "../components/ByosenSheet";
 
 // -------------------- TIPOS --------------------
@@ -37,7 +37,7 @@ type Appointment = {
   note: string | null;
   status: string;
   visit_observations: string | null;
-  byosen_points: ByosenPoint[] | null; // jsonb
+  byosen_points: ByosenPoint[] | null; // <-- Ahora usa tu tipo ByosenPoint
 };
 
 // -------------------- PÁGINA --------------------
