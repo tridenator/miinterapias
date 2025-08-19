@@ -6,6 +6,8 @@ import { Link } from 'react-router-dom';
 
 // --- TIPOS Y FUNCIONES ---
 type Patient = { full_name: string; phone: string | null };
+// Añadimos el perfil del terapeuta a la cita para acceder a su color
+type TherapistProfile = { color: string | null };
 type Appointment = { 
   id: string; 
   therapist_id: string; 
@@ -16,9 +18,9 @@ type Appointment = {
   service: string | null; 
   note: string | null;
   patients: Patient | null;
+  profiles: TherapistProfile | null; // <-- Perfil del terapeuta
 };
-type Profile = { id: string; full_name: string; phone: string | null; role: 'admin' | 'therapist' };
-type BusySlot = { start_at: string; end_at: string; status: string };
+type Profile = { id: string; full_name: string; phone: string | null; role: 'admin' | 'therapist', color: string | null };
 
 function toISO(date: Date) { return date.toISOString(); }
 function range30(start: dayjs.Dayjs, end: dayjs.Dayjs) {
@@ -48,13 +50,12 @@ function Scheduler({ userId }: { userId: string }) {
       const fromISO = toISO(dayStart.toDate());
       const toISOv = toISO(dayEnd.toDate());
       
-      // Hacemos una sola consulta para traer todas las citas del día con la info del paciente
       const { data, error: appointmentsError } = await supabase
         .from('appointments')
-        .select('*, patients (full_name, phone)')
+        .select('*, patients (full_name, phone), profiles!inner(color)') // <-- Hacemos join para traer el color
         .gte('start_at', fromISO)
         .lt('start_at', toISOv)
-        .eq('status', 'scheduled'); // Solo traemos las agendadas
+        .eq('status', 'scheduled');
 
       if (appointmentsError) throw appointmentsError;
 
@@ -69,12 +70,17 @@ function Scheduler({ userId }: { userId: string }) {
 
   useEffect(() => {
     refreshAppointments();
-  }, [date]); // Se ejecuta solo cuando cambia el día
+  }, [date]);
 
   const occupiedSlots = useMemo(() => {
     const occupied = new Set<string>();
     allAppointments.forEach(appt => {
-      occupied.add(dayjs(appt.start_at).toISOString());
+      const appointmentStart = dayjs(appt.start_at);
+      occupied.add(appointmentStart.subtract(60, 'minutes').toISOString());
+      occupied.add(appointmentStart.subtract(30, 'minutes').toISOString());
+      occupied.add(appointmentStart.toISOString());
+      occupied.add(appointmentStart.add(30, 'minutes').toISOString());
+      occupied.add(appointmentStart.add(60, 'minutes').toISOString());
     });
     return occupied;
   }, [allAppointments]);
@@ -100,8 +106,20 @@ function Scheduler({ userId }: { userId: string }) {
             const label = s.format('HH:mm');
             const isOccupied = occupiedSlots.has(startISO);
             
-            const appointmentDetails = isOccupied ? allAppointments.find(a => dayjs(a.start_at).toISOString() === startISO) : null;
+            const appointmentDetails = allAppointments.find(a => {
+                const apptStart = dayjs(a.start_at);
+                return startISO === apptStart.toISOString() || startISO === apptStart.add(30, 'minutes').toISOString();
+            });
             const isOwnAppointment = appointmentDetails?.therapist_id === userId;
+            
+            // --- MODIFICADO: Lógica de estilo con color y borde ---
+            let buttonStyle = 'bg-white hover:bg-gray-50 cursor-pointer border-gray-200'; // Libre
+            if (isOwnAppointment && appointmentDetails) {
+              const color = appointmentDetails.profiles?.color || 'blue'; // Color por defecto si no hay
+              buttonStyle = `bg-${color}-50 border-${color}-400 border-2 hover:shadow-md cursor-pointer`;
+            } else if (isOccupied) {
+              buttonStyle = 'bg-gray-100 border-gray-200 cursor-not-allowed';
+            }
 
             return (
               <button 
@@ -111,11 +129,7 @@ function Scheduler({ userId }: { userId: string }) {
                   if (isOwnAppointment && appointmentDetails) setViewingAppointment(appointmentDetails);
                   if (!isOccupied) setIsBookingManually(startISO);
                 }}
-                className={`flex items-center justify-between rounded-2xl border px-3 py-3 transition ${
-                  isOwnAppointment ? 'bg-blue-50 border-blue-300 hover:shadow-md cursor-pointer' : 
-                  isOccupied ? 'bg-gray-100 border-gray-200 cursor-not-allowed' : 
-                  'bg-white hover:bg-gray-50 cursor-pointer'
-                }`}
+                className={`flex items-center justify-between rounded-2xl border px-3 py-3 transition ${buttonStyle}`}
               >
                 <span className="font-medium">{label}</span>
                 {isOwnAppointment && appointmentDetails ? (
@@ -225,16 +239,20 @@ function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { sta
   );
 }
 
+// --- MODIFICADO: Modal de perfil con paleta de colores ---
+const colorPalette = ['blue', 'green', 'purple', 'pink', 'yellow', 'indigo'];
+
 function ProfileEditModal({ profile, onClose, onSuccess }: { profile: Profile; onClose: () => void; onSuccess: (updatedProfile: Profile) => void; }) {
   const [fullName, setFullName] = useState(profile.full_name || '');
   const [phone, setPhone] = useState(profile.phone || '');
+  const [color, setColor] = useState(profile.color || 'blue');
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
     setSaving(true);
     const { data, error } = await supabase
       .from('profiles')
-      .update({ full_name: fullName, phone: phone })
+      .update({ full_name: fullName, phone: phone, color: color })
       .eq('id', profile.id)
       .select()
       .single();
@@ -249,10 +267,25 @@ function ProfileEditModal({ profile, onClose, onSuccess }: { profile: Profile; o
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-3">
+      <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-4">
         <h2 className="text-lg font-semibold">Editar Mi Perfil</h2>
         <input className="w-full border rounded-xl px-3 py-2" placeholder="Nombre completo" value={fullName} onChange={e => setFullName(e.target.value)} />
         <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono" value={phone} onChange={e => setPhone(e.target.value)} />
+        
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Mi Color en la Agenda</label>
+          <div className="flex gap-2">
+            {colorPalette.map(c => (
+              <button 
+                key={c}
+                onClick={() => setColor(c)}
+                className={`w-8 h-8 rounded-full border-2 ${color === c ? `border-black` : 'border-transparent'} bg-${c}-400`}
+                title={c}
+              />
+            ))}
+          </div>
+        </div>
+
         <div className="flex justify-end gap-2 pt-4">
           <button className="px-4 py-2 rounded-xl border" onClick={onClose} disabled={saving}>Cancelar</button>
           <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button>
