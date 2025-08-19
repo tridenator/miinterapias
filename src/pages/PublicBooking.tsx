@@ -69,20 +69,22 @@ export default function PublicBooking(){
     })();
   },[tId, date]);
 
-  // --- MODIFICADO: Lógica de Ocupación con 1.5 horas de bloqueo ---
+  // --- MODIFICADO: Lógica de Ocupación con bloqueo de 2.5 horas ---
   function isOccupied(iso: string){
-    const currentSlot = dayjs(iso); // El slot que estamos revisando (ej: 10:30)
+    const currentSlot = dayjs(iso);
 
-    // Revisa si el slot actual cae dentro del bloqueo de 1.5 horas de CUALQUIER cita agendada
     return busy.some(appointment => {
       const appointmentStart = dayjs(appointment.start_at);
+
+      // El bloqueo total es de 2.5 horas.
+      // Inicia 1 hora (60 min) antes de la cita.
+      const blockStart = appointmentStart.subtract(60, 'minutes');
       
-      // La consulta dura 1 hora y la preparación 30 min.
-      // El bloqueo total es de 90 minutos desde el inicio de la cita.
+      // Termina 1.5 horas (90 min) después del inicio de la cita.
       const blockEnd = appointmentStart.add(90, 'minutes');
 
-      // El slot está ocupado si es igual al inicio de la cita, o si está entre el inicio y el fin del bloqueo.
-      return currentSlot.isSame(appointmentStart) || (currentSlot.isAfter(appointmentStart) && currentSlot.isBefore(blockEnd));
+      // El slot está ocupado si cae dentro de este rango de bloqueo.
+      return currentSlot.isSame(blockStart) || (currentSlot.isAfter(blockStart) && currentSlot.isBefore(blockEnd));
     });
   }
 
