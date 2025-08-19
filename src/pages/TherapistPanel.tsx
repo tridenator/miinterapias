@@ -51,7 +51,7 @@ function Scheduler({ userId }: { userId: string }) {
       
       const { data, error: appointmentsError } = await supabase
         .from('appointments')
-        .select('*, patients (full_name, phone), profiles!inner(color)') // Hacemos join para traer el color
+        .select('*, patients (full_name, phone), profiles!appointments_therapist_id_fkey(color)') // <-- CORRECCIÓN AQUÍ
         .gte('start_at', fromISO)
         .lt('start_at', toISOv)
         .eq('status', 'scheduled');
