@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-
 export type ByosenPoint = { x: number; y: number }; // x,y normalizados 0..1
-
 const VB_W = 100; // ancho lógico; alto se calcula por la relación de la imagen
-
 export default function ByosenSheet({
   points,
   onPointsChange,
@@ -18,7 +15,7 @@ export default function ByosenSheet({
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [vbH, setVbH] = useState<number>(150); // alto lógico (se ajusta al cargar la imagen)
 
-  // Al cargar la imagen, calculamos el alto del viewBox para respetar la relación
+  
   useEffect(() => {
     const img = new Image();
     img.src = src;
@@ -73,9 +70,7 @@ export default function ByosenSheet({
           className={`w-64 bg-white rounded ${isReadOnly ? "" : "cursor-crosshair"}`}
           style={{ touchAction: "none" }} // ayuda en móviles
         >
-          {/* Lámina completa */}
           <image href={src} x="0" y="0" width={VB_W} height={vbH} />
-          {/* Puntos */}
           {points.map((p, i) => (
             <circle
               key={i}
