@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import dayjs from '../lib/dayjs';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
+import type { Session } from '@supabase/supabase-js';
 
-// --- TIPOS ---
-type Therapist = { id: string; full_name: string; color: string | null };
+// --- TIPOS Y FUNCIONES ---
+type Therapist = { id: string; full_name: string; color: string | null }; // <-- Se añade el color
 type BusySlot = { start_at: string; end_at: string; status: string };
 type SuccessInfo = { therapistName: string; date: string; time: string };
-
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -54,9 +54,10 @@ export default function PublicBooking(){
 
   useEffect(()=>{
     (async ()=>{
-      const { data } = await supabase.from('profiles').select('id, full_name, color').eq('role', 'therapist');
+      const { data } = await supabase.rpc('list_therapists');
       if(data){
         setTherapists(data as Therapist[]);
+        // Ya no seleccionamos un terapeuta por defecto
       }
     })();
   },[]);
@@ -67,7 +68,7 @@ export default function PublicBooking(){
       return;
     };
     (async ()=>{
-      const { data } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
+      const { data } = await supabase.rpc('get_all_busy_slots', { day: date.format('YYYY-MM-DD') });
       setBusy((data||[]) as BusySlot[]);
     })();
   },[tId, date]);
@@ -114,7 +115,7 @@ export default function PublicBooking(){
         time: dayjs(creating).format('HH:mm'),
       });
       setCreating(null);
-      const { data: busyData } = await supabase.rpc('get_busy_slots', { t_id: tId, day: date.format('YYYY-MM-DD') });
+      const { data: busyData } = await supabase.rpc('get_all_busy_slots', { day: date.format('YYYY-MM-DD') });
       setBusy((busyData || []) as BusySlot[]);
       setForm({ name: '', phone: '', service: 'Reiki', note: '' });
 
