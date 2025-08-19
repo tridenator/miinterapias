@@ -4,10 +4,11 @@ import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
 import type { Session } from '@supabase/supabase-js';
 
-// --- TIPOS Y FUNCIONES ---
-type Therapist = { id: string; full_name: string; color: string | null }; // <-- Se añade el color
+// --- TIPOS ---
+type Therapist = { id: string; full_name: string; color: string | null };
 type BusySlot = { start_at: string; end_at: string; status: string };
 type SuccessInfo = { therapistName: string; date: string; time: string };
+
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -57,21 +58,18 @@ export default function PublicBooking(){
       const { data } = await supabase.rpc('list_therapists');
       if(data){
         setTherapists(data as Therapist[]);
-        // Ya no seleccionamos un terapeuta por defecto
       }
     })();
   },[]);
 
+  // --- MODIFICADO: Cargar TODOS los horarios ocupados del día ---
   useEffect(()=>{
-    if(!tId) {
-      setBusy([]);
-      return;
-    };
     (async ()=>{
+      // Usamos get_all_busy_slots para la agenda compartida, independientemente del terapeuta seleccionado
       const { data } = await supabase.rpc('get_all_busy_slots', { day: date.format('YYYY-MM-DD') });
       setBusy((data||[]) as BusySlot[]);
     })();
-  },[tId, date]);
+  },[date]); // Se actualiza solo cuando cambia la fecha
 
   function isOccupied(iso: string){
     const currentSlot = dayjs(iso);
