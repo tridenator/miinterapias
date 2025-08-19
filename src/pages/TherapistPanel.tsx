@@ -51,7 +51,7 @@ function Scheduler({ userId }: { userId: string }) {
       
       const { data, error: appointmentsError } = await supabase
         .from('appointments')
-        .select('*, patients (full_name, phone), profiles!appointments_therapist_id_fkey(color)') // <-- CORRECCIÓN AQUÍ
+        .select('*, patients (full_name, phone), profiles!appointments_therapist_id_fkey(color)')
         .gte('start_at', fromISO)
         .lt('start_at', toISOv)
         .eq('status', 'scheduled');
@@ -237,7 +237,6 @@ function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { sta
   );
 }
 
-// --- MODIFICADO: Modal de perfil con paleta de colores ---
 const colorPalette = ['blue', 'green', 'purple', 'pink', 'yellow', 'indigo'];
 
 function ProfileEditModal({ profile, onClose, onSuccess }: { profile: Profile; onClose: () => void; onSuccess: (updatedProfile: Profile) => void; }) {
@@ -340,6 +339,17 @@ export default function TherapistPanel() {
         </button>
       </div>
       <Scheduler userId={userProfile.id} />
+      {/* --- CORRECCIÓN AQUÍ: Pasamos la información del perfil al modal --- */}
+      {isEditingProfile && (
+        <ProfileEditModal
+          profile={userProfile}
+          onClose={() => setIsEditingProfile(false)}
+          onSuccess={(updatedProfile) => {
+            setUserProfile(updatedProfile);
+            setIsEditingProfile(false);
+          }}
+        />
+      )}
     </div>
   );
 }
