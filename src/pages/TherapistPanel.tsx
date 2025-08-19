@@ -103,13 +103,12 @@ function Scheduler({ userId }: { userId: string }) {
     return occupied;
   }, [allAppointments]);
 
-  // --- MODIFICADO: Función para ELIMINAR una cita ---
+  // --- NUEVO: Función para cancelar una cita ---
   const handleCancelAppointment = async (appointmentId: string) => {
     try {
-      // Usamos .delete() para eliminar la fila y liberar el horario
       const { error } = await supabase
         .from('appointments')
-        .delete()
+        .update({ status: 'cancelled' })
         .eq('id', appointmentId);
 
       if (error) throw error;
@@ -187,7 +186,7 @@ function Scheduler({ userId }: { userId: string }) {
         <AppointmentDetailsModal 
           appointment={viewingAppointment} 
           onClose={() => setViewingAppointment(null)}
-          onCancelAppointment={handleCancelAppointment}
+          onCancelAppointment={handleCancelAppointment} // <-- Pasamos la función
         />
       )}
       {isBookingManually && (
