@@ -17,9 +17,28 @@ type Appointment = {
   service: string | null; 
   note: string | null;
   patients: Patient | null;
-  profiles: TherapistProfile | null; // Perfil del terapeuta para obtener su color
+  profiles: TherapistProfile | null;
 };
 type Profile = { id: string; full_name: string; phone: string | null; role: 'admin' | 'therapist', color: string | null };
+
+const colorStyles: { [key: string]: { bg: string; border: string; ring: string } } = {
+  blue:   { bg: 'bg-blue-400',   border: 'border-blue-400',   ring: 'ring-blue-400' },
+  green:  { bg: 'bg-green-400',  border: 'border-green-400',  ring: 'ring-green-400' },
+  purple: { bg: 'bg-purple-400', border: 'border-purple-400', ring: 'ring-purple-400' },
+  pink:   { bg: 'bg-pink-400',   border: 'border-pink-400',   ring: 'ring-pink-400' },
+  yellow: { bg: 'bg-yellow-400', border: 'border-yellow-400', ring: 'ring-yellow-400' },
+  indigo: { bg: 'bg-indigo-400', border: 'border-indigo-400', ring: 'ring-indigo-400' },
+  gray:   { bg: 'bg-gray-400',   border: 'border-gray-400',   ring: 'ring-gray-400' },
+};
+const agendaColorStyles: { [key: string]: { bg: string; border: string } } = {
+    blue:   { bg: 'bg-blue-50',   border: 'border-blue-400' },
+    green:  { bg: 'bg-green-50',  border: 'border-green-400' },
+    purple: { bg: 'bg-purple-50', border: 'border-purple-400' },
+    pink:   { bg: 'bg-pink-50',   border: 'border-pink-400' },
+    yellow: { bg: 'bg-yellow-50', border: 'border-yellow-400' },
+    indigo: { bg: 'bg-indigo-50', border: 'border-indigo-400' },
+    gray:   { bg: 'bg-gray-100',  border: 'border-gray-200' },
+};
 
 function toISO(date: Date) { return date.toISOString(); }
 function range30(start: dayjs.Dayjs, end: dayjs.Dayjs) {
@@ -105,16 +124,17 @@ function Scheduler({ userId }: { userId: string }) {
             const label = s.format('HH:mm');
             const isOccupied = occupiedSlots.has(startISO);
             
-            const appointmentDetails = allAppointments.find(a => {
-                const apptStart = dayjs(a.start_at);
-                return startISO === apptStart.toISOString() || startISO === apptStart.add(30, 'minutes').toISOString();
-            });
+            // --- CORREGIDO: Busca la cita solo en la hora de inicio exacta ---
+            const appointmentDetails = allAppointments.find(a => dayjs(a.start_at).toISOString() === startISO);
             const isOwnAppointment = appointmentDetails?.therapist_id === userId;
             
             let buttonStyle = 'bg-white hover:bg-gray-50 cursor-pointer border-gray-200';
             if (appointmentDetails) {
-              const color = appointmentDetails.profiles?.color || 'gray';
-              buttonStyle = `bg-${color}-50 border-${color}-400 border-2 ${isOwnAppointment ? 'hover:shadow-md cursor-pointer' : 'cursor-not-allowed'}`;
+              const colorName = appointmentDetails.profiles?.color || 'gray';
+              const style = agendaColorStyles[colorName] || agendaColorStyles.gray;
+              buttonStyle = `${style.bg} ${style.border} border-2 ${isOwnAppointment ? 'hover:shadow-md cursor-pointer' : 'cursor-not-allowed'}`;
+            } else if (isOccupied) {
+              buttonStyle = 'bg-gray-100 border-gray-200 cursor-not-allowed';
             }
 
             return (
@@ -164,7 +184,6 @@ function Scheduler({ userId }: { userId: string }) {
 
 // --- MODALES ---
 function AppointmentDetailsModal({ appointment, onClose }: { appointment: Appointment, onClose: () => void }) {
-  // ... (sin cambios)
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-4">
@@ -192,7 +211,6 @@ function AppointmentDetailsModal({ appointment, onClose }: { appointment: Appoin
 }
 
 function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { startISO: string; therapistId: string; onClose: () => void; onSuccess: () => void; }) {
-  // ... (sin cambios)
   const [form, setForm] = useState({ name: '', phone: '', service: 'Reiki', note: '' });
   const [saving, setSaving] = useState(false);
 
@@ -237,8 +255,6 @@ function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { sta
   );
 }
 
-const colorPalette = ['blue', 'green', 'purple', 'pink', 'yellow', 'indigo'];
-
 function ProfileEditModal({ profile, onClose, onSuccess }: { profile: Profile; onClose: () => void; onSuccess: (updatedProfile: Profile) => void; }) {
   const [fullName, setFullName] = useState(profile.full_name || '');
   const [phone, setPhone] = useState(profile.phone || '');
@@ -272,11 +288,11 @@ function ProfileEditModal({ profile, onClose, onSuccess }: { profile: Profile; o
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Mi Color en la Agenda</label>
           <div className="flex gap-2 flex-wrap">
-            {colorPalette.map(c => (
+            {Object.keys(colorStyles).filter(c => c !== 'gray').map(c => (
               <button 
                 key={c}
                 onClick={() => setColor(c)}
-                className={`w-8 h-8 rounded-full border-2 transition-all ${color === c ? `border-black ring-2 ring-offset-1 ring-black` : 'border-gray-300'} bg-${c}-400`}
+                className={`w-8 h-8 rounded-full border-2 transition-all ${color === c ? `border-black ring-2 ring-offset-1 ring-black` : 'border-gray-300'} ${colorStyles[c].bg}`}
                 title={c}
               />
             ))}
@@ -339,7 +355,6 @@ export default function TherapistPanel() {
         </button>
       </div>
       <Scheduler userId={userProfile.id} />
-      {/* --- CORRECCIÓN AQUÍ: Pasamos la información del perfil al modal --- */}
       {isEditingProfile && (
         <ProfileEditModal
           profile={userProfile}
