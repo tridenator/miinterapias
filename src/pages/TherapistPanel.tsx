@@ -103,6 +103,25 @@ function Scheduler({ userId }: { userId: string }) {
     return occupied;
   }, [allAppointments]);
 
+  // --- NUEVO: Función para cancelar una cita ---
+  const handleCancelAppointment = async (appointmentId: string) => {
+    try {
+      const { error } = await supabase
+        .from('appointments')
+        .update({ status: 'cancelled' })
+        .eq('id', appointmentId);
+
+      if (error) throw error;
+
+      // Cerramos el modal y refrescamos la agenda
+      setViewingAppointment(null);
+      await refreshAppointments();
+    } catch (err) {
+      console.error("Error cancelling appointment:", err);
+      alert("No se pudo cancelar la cita.");
+    }
+  };
+
   return (
     <div className="max-w-md mx-auto p-4 space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -124,7 +143,6 @@ function Scheduler({ userId }: { userId: string }) {
             const label = s.format('HH:mm');
             const isOccupied = occupiedSlots.has(startISO);
             
-            // --- CORREGIDO: Busca la cita solo en la hora de inicio exacta ---
             const appointmentDetails = allAppointments.find(a => dayjs(a.start_at).toISOString() === startISO);
             const isOwnAppointment = appointmentDetails?.therapist_id === userId;
             
@@ -167,7 +185,8 @@ function Scheduler({ userId }: { userId: string }) {
       {viewingAppointment && (
         <AppointmentDetailsModal 
           appointment={viewingAppointment} 
-          onClose={() => setViewingAppointment(null)} 
+          onClose={() => setViewingAppointment(null)}
+          onCancelAppointment={handleCancelAppointment} // <-- Pasamos la función
         />
       )}
       {isBookingManually && (
@@ -183,7 +202,17 @@ function Scheduler({ userId }: { userId: string }) {
 }
 
 // --- MODALES ---
-function AppointmentDetailsModal({ appointment, onClose }: { appointment: Appointment, onClose: () => void }) {
+function AppointmentDetailsModal({ appointment, onClose, onCancelAppointment }: { appointment: Appointment, onClose: () => void, onCancelAppointment: (id: string) => void }) {
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
+
+  const handleCancelClick = () => {
+    if (confirmingCancel) {
+      onCancelAppointment(appointment.id);
+    } else {
+      setConfirmingCancel(true);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
       <div className="w-full max-w-md bg-white rounded-2xl p-5 space-y-4">
@@ -202,7 +231,13 @@ function AppointmentDetailsModal({ appointment, onClose }: { appointment: Appoin
           <p><b>Servicio:</b> {appointment.service || 'No especificado'}</p>
           {appointment.note && <p><b>Nota:</b> {appointment.note}</p>}
         </div>
-        <div className="flex justify-end">
+        <div className="flex justify-between items-center pt-2">
+          <button 
+            onClick={handleCancelClick} 
+            className={`px-4 py-2 rounded-xl text-sm text-white transition-colors ${confirmingCancel ? 'bg-red-700' : 'bg-red-500 hover:bg-red-600'}`}
+          >
+            {confirmingCancel ? '¿Confirmar cancelación?' : 'Cancelar Cita'}
+          </button>
           <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={onClose}>Cerrar</button>
         </div>
       </div>
