@@ -103,18 +103,14 @@ function Scheduler({ userId }: { userId: string }) {
     return occupied;
   }, [allAppointments]);
 
-  // --- MODIFICADO: Función para ELIMINAR una cita ---
   const handleCancelAppointment = async (appointmentId: string) => {
     try {
-      // Usamos .delete() para eliminar la fila y liberar el horario
       const { error } = await supabase
         .from('appointments')
         .delete()
         .eq('id', appointmentId);
 
       if (error) throw error;
-
-      // Cerramos el modal y refrescamos la agenda
       setViewingAppointment(null);
       await refreshAppointments();
     } catch (err) {
@@ -195,7 +191,10 @@ function Scheduler({ userId }: { userId: string }) {
           startISO={isBookingManually}
           therapistId={userId}
           onClose={() => setIsBookingManually(null)}
-          onSuccess={refreshAppointments}
+          onSuccess={() => {
+            setIsBookingManually(null);
+            refreshAppointments();
+          }}
         />
       )}
     </div>
@@ -251,9 +250,13 @@ function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { sta
   const [saving, setSaving] = useState(false);
 
   async function handleSave() {
+    if (!form.phone.trim()) {
+      alert("El teléfono es obligatorio.");
+      return;
+    }
     setSaving(true);
     try {
-      const { error } = await supabase.rpc('book_appointment', {
+      const { error } = await supabase.rpc('book_appointment_with_phone_check', {
         t_id: therapistId,
         start_at: startISO,
         patient_name: form.name.trim(),
@@ -279,7 +282,7 @@ function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { sta
           {dayjs(startISO).format('dddd D [de] MMMM, HH:mm')} hs
         </p>
         <input className="w-full border rounded-xl px-3 py-2" placeholder="Nombre del paciente" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} />
-        <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} />
+        <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono (obligatorio)" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} />
         <input className="w-full border rounded-xl px-3 py-2" placeholder="Servicio" value={form.service} onChange={e=>setForm({...form, service: e.target.value})} />
         <textarea className="w-full border rounded-xl px-3 py-2" placeholder="Nota (opcional)" value={form.note} onChange={e=>setForm({...form, note: e.target.value})} />
         <div className="flex gap-2 justify-end">
