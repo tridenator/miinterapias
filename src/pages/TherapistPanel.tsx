@@ -20,6 +20,7 @@ type Appointment = {
   profiles: TherapistProfile | null;
 };
 type Profile = { id: string; full_name: string; phone: string | null; role: 'admin' | 'therapist', color: string | null };
+type BusySlot = { start_at: string; end_at: string; status: string };
 
 const colorStyles: { [key: string]: { bg: string; border: string; ring: string } } = {
   blue:   { bg: 'bg-blue-400',   border: 'border-blue-400',   ring: 'ring-blue-400' },
@@ -51,7 +52,8 @@ function range30(start: dayjs.Dayjs, end: dayjs.Dayjs) {
 // --- COMPONENTE SCHEDULER DEL PANEL ---
 function Scheduler({ userId }: { userId: string }) {
   const [date, setDate] = useState(() => dayjs().startOf('day'));
-  const [allAppointments, setAllAppointments] = useState<Appointment[]>([]);
+  const [busySlots, setBusySlots] = useState<BusySlot[]>([]);
+  const [myAppointments, setMyAppointments] = useState<Appointment[]>([]);
   const [viewingAppointment, setViewingAppointment] = useState<Appointment | null>(null);
   const [isBookingManually, setIsBookingManually] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,16 +70,22 @@ function Scheduler({ userId }: { userId: string }) {
       const fromISO = toISO(dayStart.toDate());
       const toISOv = toISO(dayEnd.toDate());
       
-      const { data, error: appointmentsError } = await supabase
+      // 1. Obtenemos TODOS los horarios ocupados usando la función RPC para evitar RLS
+      const { data: allBusyData, error: busyError } = await supabase.rpc('get_all_busy_slots', { day: date.format('YYYY-MM-DD') });
+      if (busyError) throw busyError;
+      setBusySlots((allBusyData || []) as BusySlot[]);
+
+      // 2. Obtenemos los detalles SÓLO de las citas del terapeuta actual
+      const { data: myData, error: myApptsError } = await supabase
         .from('appointments')
         .select('*, patients (full_name, phone), profiles!appointments_therapist_id_fkey(color)')
+        .eq('therapist_id', userId)
         .gte('start_at', fromISO)
         .lt('start_at', toISOv)
         .eq('status', 'scheduled');
+      if (myApptsError) throw myApptsError;
+      setMyAppointments((myData || []) as Appointment[]);
 
-      if (appointmentsError) throw appointmentsError;
-
-      setAllAppointments((data || []) as Appointment[]);
     } catch (err: any) {
       console.error("Error fetching appointments:", err);
       setError("No se pudo cargar la agenda. Revisa la consola para más detalles.");
@@ -88,11 +96,11 @@ function Scheduler({ userId }: { userId: string }) {
 
   useEffect(() => {
     refreshAppointments();
-  }, [date]);
+  }, [date, userId]);
 
   const occupiedSlots = useMemo(() => {
     const occupied = new Set<string>();
-    allAppointments.forEach(appt => {
+    busySlots.forEach(appt => {
       const appointmentStart = dayjs(appt.start_at);
       occupied.add(appointmentStart.subtract(60, 'minutes').toISOString());
       occupied.add(appointmentStart.subtract(30, 'minutes').toISOString());
@@ -101,15 +109,11 @@ function Scheduler({ userId }: { userId: string }) {
       occupied.add(appointmentStart.add(60, 'minutes').toISOString());
     });
     return occupied;
-  }, [allAppointments]);
+  }, [busySlots]);
 
   const handleCancelAppointment = async (appointmentId: string) => {
     try {
-      const { error } = await supabase
-        .from('appointments')
-        .delete()
-        .eq('id', appointmentId);
-
+      const { error } = await supabase.from('appointments').delete().eq('id', appointmentId);
       if (error) throw error;
       setViewingAppointment(null);
       await refreshAppointments();
@@ -140,14 +144,13 @@ function Scheduler({ userId }: { userId: string }) {
             const label = s.format('HH:mm');
             const isOccupied = occupiedSlots.has(startISO);
             
-            const appointmentDetails = allAppointments.find(a => dayjs(a.start_at).toISOString() === startISO);
-            const isOwnAppointment = appointmentDetails?.therapist_id === userId;
+            const appointmentDetails = myAppointments.find(a => dayjs(a.start_at).toISOString() === startISO);
             
             let buttonStyle = 'bg-white hover:bg-gray-50 cursor-pointer border-gray-200';
             if (appointmentDetails) {
               const colorName = appointmentDetails.profiles?.color || 'gray';
               const style = agendaColorStyles[colorName] || agendaColorStyles.gray;
-              buttonStyle = `${style.bg} ${style.border} border-2 ${isOwnAppointment ? 'hover:shadow-md cursor-pointer' : 'cursor-not-allowed'}`;
+              buttonStyle = `${style.bg} ${style.border} border-2 hover:shadow-md cursor-pointer`;
             } else if (isOccupied) {
               buttonStyle = 'bg-gray-100 border-gray-200 cursor-not-allowed';
             }
@@ -155,15 +158,15 @@ function Scheduler({ userId }: { userId: string }) {
             return (
               <button 
                 key={idx} 
-                disabled={isOccupied && !isOwnAppointment}
+                disabled={isOccupied && !appointmentDetails}
                 onClick={() => {
-                  if (isOwnAppointment && appointmentDetails) setViewingAppointment(appointmentDetails);
+                  if (appointmentDetails) setViewingAppointment(appointmentDetails);
                   if (!isOccupied) setIsBookingManually(startISO);
                 }}
                 className={`flex items-center justify-between rounded-2xl border px-3 py-3 transition ${buttonStyle}`}
               >
                 <span className="font-medium">{label}</span>
-                {isOwnAppointment && appointmentDetails ? (
+                {appointmentDetails ? (
                   <span className="text-left text-sm">
                     <b>{appointmentDetails.patients?.full_name || 'Cita'}</b>
                     <span className="block text-gray-600">{appointmentDetails.service || 'Servicio'}</span>
@@ -191,10 +194,7 @@ function Scheduler({ userId }: { userId: string }) {
           startISO={isBookingManually}
           therapistId={userId}
           onClose={() => setIsBookingManually(null)}
-          onSuccess={() => {
-            setIsBookingManually(null);
-            refreshAppointments();
-          }}
+          onSuccess={refreshAppointments}
         />
       )}
     </div>
@@ -252,7 +252,6 @@ function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { sta
 
   const handleSave = async () => {
     setError('');
-    // --- NUEVO: Validación de campos ---
     if (!form.name.trim()) {
       setError("El nombre del paciente es obligatorio.");
       return;
