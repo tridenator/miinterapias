@@ -248,15 +248,23 @@ function AppointmentDetailsModal({ appointment, onClose, onCancelAppointment }: 
 function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { startISO: string; therapistId: string; onClose: () => void; onSuccess: () => void; }) {
   const [form, setForm] = useState({ name: '', phone: '', service: 'Reiki', note: '' });
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  async function handleSave() {
-    if (!form.phone.trim()) {
-      alert("El teléfono es obligatorio.");
+  const handleSave = async () => {
+    setError('');
+    // --- NUEVO: Validación de campos ---
+    if (!form.name.trim()) {
+      setError("El nombre del paciente es obligatorio.");
       return;
     }
+    if (!/^\d+$/.test(form.phone.trim())) {
+      setError("El teléfono solo puede contener números.");
+      return;
+    }
+
     setSaving(true);
     try {
-      const { error } = await supabase.rpc('book_appointment_with_phone_check', {
+      const { error: rpcError } = await supabase.rpc('book_appointment_with_phone_check', {
         t_id: therapistId,
         start_at: startISO,
         patient_name: form.name.trim(),
@@ -264,15 +272,15 @@ function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { sta
         service: form.service.trim(),
         note: form.note.trim(),
       });
-      if (error) throw error;
+      if (rpcError) throw rpcError;
       onSuccess();
-    } catch (e) {
-      alert('Error al agendar la cita.');
+    } catch (e: any) {
+      setError('Error al agendar: ' + e.message);
       console.error(e);
     } finally {
       setSaving(false);
     }
-  }
+  };
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4">
@@ -281,10 +289,11 @@ function ManualBookingModal({ startISO, therapistId, onClose, onSuccess }: { sta
         <p className="text-sm text-gray-500">
           {dayjs(startISO).format('dddd D [de] MMMM, HH:mm')} hs
         </p>
-        <input className="w-full border rounded-xl px-3 py-2" placeholder="Nombre del paciente" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} />
-        <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono (obligatorio)" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} />
+        <input className="w-full border rounded-xl px-3 py-2" placeholder="Nombre del paciente (obligatorio)" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} />
+        <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono (obligatorio, solo números)" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value.replace(/\D/g, '')})} />
         <input className="w-full border rounded-xl px-3 py-2" placeholder="Servicio" value={form.service} onChange={e=>setForm({...form, service: e.target.value})} />
         <textarea className="w-full border rounded-xl px-3 py-2" placeholder="Nota (opcional)" value={form.note} onChange={e=>setForm({...form, note: e.target.value})} />
+        {error && <p className="text-sm text-red-600">{error}</p>}
         <div className="flex gap-2 justify-end">
           <button className="px-4 py-2 rounded-xl border" onClick={onClose} disabled={saving}>Cancelar</button>
           <button className="px-4 py-2 rounded-xl bg-black text-white" onClick={handleSave} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</button>
