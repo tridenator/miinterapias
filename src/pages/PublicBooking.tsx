@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import dayjs from '../lib/dayjs';
 import { supabase } from '../lib/supabase';
 import Header from '../components/Header';
-import type { Session } from '@supabase/supabase-js';
 
 // --- TIPOS ---
 type Therapist = { id: string; full_name: string; color: string | null };
@@ -12,7 +11,6 @@ type SuccessInfo = { therapistName: string; date: string; time: string };
 
 const WEEKDAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
-// Mapeo de colores para que Tailwind CSS los detecte
 const agendaColorStyles: { [key: string]: { bg: string; border: string } } = {
     blue:   { bg: 'bg-blue-50',   border: 'border-blue-400' },
     green:  { bg: 'bg-green-50',  border: 'border-green-400' },
@@ -33,7 +31,7 @@ function range30(start: any, end: any){
 export default function PublicBooking(){
   const [step, setStep] = useState<number>(1);
   const [therapists, setTherapists] = useState<Therapist[]>([]);
-  const [tId, setTId] = useState<string>(''); // Inicia vacío
+  const [tId, setTId] = useState<string>('');
 
   const [viewMonth, setViewMonth] = useState(()=>dayjs().startOf('month'));
   const monthLabel = viewMonth.format('MMMM YYYY');
@@ -62,14 +60,16 @@ export default function PublicBooking(){
     })();
   },[]);
 
-  // --- MODIFICADO: Cargar TODOS los horarios ocupados del día ---
   useEffect(()=>{
+    if(!tId) {
+      setBusy([]);
+      return;
+    };
     (async ()=>{
-      // Usamos get_all_busy_slots para la agenda compartida, independientemente del terapeuta seleccionado
       const { data } = await supabase.rpc('get_all_busy_slots', { day: date.format('YYYY-MM-DD') });
       setBusy((data||[]) as BusySlot[]);
     })();
-  },[date]); // Se actualiza solo cuando cambia la fecha
+  },[tId, date]);
 
   function isOccupied(iso: string){
     const currentSlot = dayjs(iso);
@@ -93,14 +93,13 @@ export default function PublicBooking(){
         service: (form.service || 'Reiki').trim(),
         note: (form.note || '').trim() || null,
       };
-      const { error } = await supabase.rpc('book_appointment', payload);
+      const { error } = await supabase.rpc('book_appointment_with_phone_check', payload);
       if (error) {
         const serverText = ((error as any)?.details as string) || ((error as any)?.hint as string) || (error.message ?? '');
         const low = serverText.toLowerCase();
         const userMsg =
           low.includes('phone_required') ? 'El teléfono es obligatorio.' :
           low.includes('slot_taken')     ? 'Ese horario ya fue reservado.' :
-          (low.includes('not null') && low.includes('phone')) ? 'El teléfono es obligatorio.' :
           serverText || 'No se pudo reservar. Probá nuevamente.';
         setMsg(userMsg);
         return;
@@ -221,8 +220,8 @@ export default function PublicBooking(){
         <div className="fixed inset-0 bg-black/30 flex items-end sm:items-center justify-center p-4">
           <div className="w-full max-w-md bg-white rounded-2xl p-4 space-y-3">
             <div className="font-semibold">Reservar — {dayjs(creating).format('dddd D [de] MMMM HH:mm')}</div>
-            <input className="w-full border rounded-xl px-3 py-2" placeholder="Tu nombre (opcional)" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} />
-            <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono (obligatorio)" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value})} />
+            <input className="w-full border rounded-xl px-3 py-2" placeholder="Tu nombre (obligatorio)" value={form.name} onChange={e=>setForm({...form, name: e.target.value})} />
+            <input className="w-full border rounded-xl px-3 py-2" placeholder="Teléfono (obligatorio, solo números)" value={form.phone} onChange={e=>setForm({...form, phone: e.target.value.replace(/\D/g, '')})} />
             <input className="w-full border rounded-xl px-3 py-2" placeholder="Servicio (ej. Reiki)" value={form.service} onChange={e=>setForm({...form, service: e.target.value})} />
             <textarea className="w-full border rounded-xl px-3 py-2" placeholder="Nota (opcional)" value={form.note} onChange={e=>setForm({...form, note: e.target.value})} />
             {msg && <p className="text-sm text-red-600">{msg}</p>}
