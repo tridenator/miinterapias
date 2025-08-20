@@ -29,7 +29,10 @@ function range30(start: any, end: any){
 }
 
 export default function PublicBooking(){
-  const [step, setStep] = useState<number>(1);
+  // --- MODIFICADO: Lógica de pasos y guía corregida ---
+  const [step, setStep] = useState<number>(1); // Siempre empieza en el paso 1
+  const [showGuide, setShowGuide] = useState(() => !localStorage.getItem('guide_seen_v1'));
+
   const [therapists, setTherapists] = useState<Therapist[]>([]);
   const [tId, setTId] = useState<string>('');
 
@@ -84,12 +87,23 @@ export default function PublicBooking(){
   async function book() {
     if (!creating || !tId) return;
     setMsg('');
+
+    // --- NUEVO: Validación de campos en el frontend ---
+    if (!form.name.trim()) {
+      setMsg("El nombre es obligatorio.");
+      return;
+    }
+    if (!form.phone.trim()) {
+      setMsg("El teléfono es obligatorio.");
+      return;
+    }
+
     try {
       const payload = {
         t_id: tId,
         start_at: new Date(creating).toISOString(),
-        patient_name: (form.name || '').trim() || null,
-        phone: (form.phone || '').trim(),
+        patient_name: form.name.trim(),
+        phone: form.phone.trim(),
         service: (form.service || 'Reiki').trim(),
         note: (form.note || '').trim() || null,
       };
@@ -123,6 +137,11 @@ export default function PublicBooking(){
   }
   
   const selectedTherapist = useMemo(() => therapists.find(t => t.id === tId), [therapists, tId]);
+
+  const handleCloseGuide = () => {
+    localStorage.setItem('guide_seen_v1', 'true');
+    setShowGuide(false);
+  }
 
   return (
     <>
@@ -214,7 +233,7 @@ export default function PublicBooking(){
         </div>
       </div>
       
-      {step < 2 && <GuideModal onClose={()=>setStep(2)} />}
+      {showGuide && <GuideModal onClose={handleCloseGuide} />}
 
       {creating && (
         <div className="fixed inset-0 bg-black/30 flex items-end sm:items-center justify-center p-4">
