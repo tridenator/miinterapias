@@ -49,14 +49,12 @@ export default function PatientsPage() {
     else setAppointments([]);
   }, [selectedPatient?.id]);
   
-  // --- NUEVO: Función para eliminar paciente ---
   const handleDeletePatient = async (patientToDelete: Patient) => {
     if (window.confirm(`¿Estás seguro de que quieres eliminar a ${patientToDelete.full_name}? Esta acción no se puede deshacer.`)) {
       try {
         const { error } = await supabase.rpc('delete_patient', { patient_id_to_delete: patientToDelete.id });
         if (error) throw error;
         
-        // Refrescar la lista de pacientes
         setSelectedPatient(null);
         if (userId) await fetchPatients(userId);
       } catch (e) {
@@ -82,7 +80,7 @@ export default function PatientsPage() {
           <h1 className="text-2xl font-bold">Mis Pacientes</h1>
           <div className="flex items-center gap-3">
             <Link to="/panel" className="text-sm underline">Volver a mi agenda</Link>
-            <button onClick={() => setIsEditing(true)} className="px-4 py-2 text-sm rounded-xl border bg-blue-600 text-white hover:bg-blue-700">Nuevo Paciente</button>
+            <button onClick={() => { setSelectedPatient(null); setIsEditing(true); }} className="px-4 py-2 text-sm rounded-xl border bg-blue-600 text-white hover:bg-blue-700">Nuevo Paciente</button>
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -105,13 +103,28 @@ export default function PatientsPage() {
             {selectedPatient ? (
               <PatientFile patient={selectedPatient} appointments={appointments} onEdit={() => setIsEditing(true)} onDelete={() => handleDeletePatient(selectedPatient)} onUpdateAppointments={() => fetchAppointments(selectedPatient.id)} />
             ) : (
-              <div className="flex items-center justify-center h-[60vh] bg-gray-50 rounded-xl border-2 border-dashed"><p className="text-gray-500">Selecciona un paciente para ver su ficha</p></div>
+              <div className="flex items-center justify-center h-[60vh] bg-gray-50 rounded-xl border-2 border-dashed">
+                <div className="text-center text-gray-500">
+                  <p>Selecciona un paciente para ver su ficha</p>
+                  {patients.length === 0 && <p className="mt-2">o crea tu primer paciente.</p>}
+                </div>
+              </div>
             )}
           </div>
         </div>
       </div>
-      {(isEditing || (!selectedPatient && patients.length === 0 && !loading)) && (
-        <PatientEditModal patient={isEditing ? selectedPatient : null} therapistId={userId!} onClose={() => setIsEditing(false)} onSuccess={async (newPatient) => { setIsEditing(false); if (userId) await fetchPatients(userId); if (newPatient) setSelectedPatient(newPatient); }} />
+      {/* --- CORREGIDO: El modal solo se muestra cuando isEditing es true --- */}
+      {isEditing && (
+        <PatientEditModal
+          patient={selectedPatient}
+          therapistId={userId!}
+          onClose={() => setIsEditing(false)}
+          onSuccess={async (newPatient) => {
+            setIsEditing(false);
+            if (userId) await fetchPatients(userId);
+            if (newPatient) setSelectedPatient(newPatient);
+          }}
+        />
       )}
     </div>
   );
